@@ -17,21 +17,24 @@
 
 package org.keycloak.services.clientregistration;
 
+import org.keycloak.TokenCategory;
+import org.keycloak.TokenVerifier;
+import org.keycloak.common.VerificationException;
 import org.keycloak.common.util.Time;
+import org.keycloak.crypto.SignatureSignerContext;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.jose.jws.JWSBuilder;
-import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.jose.jws.JWSInputException;
-import org.keycloak.jose.jws.crypto.RSAProvider;
 import org.keycloak.models.ClientInitialAccessModel;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.TokenManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.JsonWebToken;
 import org.keycloak.services.Urls;
+import org.keycloak.services.clientregistration.policy.RegistrationAuth;
 import org.keycloak.util.TokenUtil;
-
-import javax.ws.rs.core.UriInfo;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -41,61 +44,81 @@ public class ClientRegistrationTokenUtils {
     public static final String TYPE_INITIAL_ACCESS_TOKEN = "InitialAccessToken";
     public static final String TYPE_REGISTRATION_ACCESS_TOKEN = "RegistrationAccessToken";
 
-    public static String updateRegistrationAccessToken(KeycloakSession session, ClientModel client) {
-        return updateRegistrationAccessToken(session.getContext().getRealm(), session.getContext().getUri(), client);
+    public static String updateTokenSignature(KeycloakSession session, ClientRegistrationAuth auth) {
+        String algorithm = session.tokens().signatureAlgorithm(TokenCategory.INTERNAL);
+        SignatureSignerContext signer = session.getProvider(SignatureProvider.class, algorithm).signer();
+
+        if (signer.getKid().equals(auth.getKid())) {
+            return auth.getToken();
+        } else {
+            RegistrationAccessToken regToken = new RegistrationAccessToken();
+            regToken.setRegistrationAuth(auth.getRegistrationAuth().toString().toLowerCase());
+
+            regToken.type(auth.getJwt().getType());
+            regToken.id(auth.getJwt().getId());
+            regToken.issuedAt(Time.currentTime());
+            regToken.expiration(0);
+            regToken.issuer(auth.getJwt().getIssuer());
+            regToken.audience(auth.getJwt().getIssuer());
+
+            String token = new JWSBuilder().jsonContent(regToken).sign(signer);
+            return token;
+        }
     }
 
-    public static String updateRegistrationAccessToken(RealmModel realm, UriInfo uri, ClientModel client) {
+    public static String updateRegistrationAccessToken(KeycloakSession session, ClientModel client, RegistrationAuth registrationAuth) {
+        return updateRegistrationAccessToken(session, session.getContext().getRealm(), client, registrationAuth);
+    }
+
+    public static String updateRegistrationAccessToken(KeycloakSession session, RealmModel realm, ClientModel client, RegistrationAuth registrationAuth) {
         String id = KeycloakModelUtils.generateId();
         client.setRegistrationToken(id);
-        String token = createToken(realm, uri, id, TYPE_REGISTRATION_ACCESS_TOKEN, 0);
-        return token;
+
+        RegistrationAccessToken regToken = new RegistrationAccessToken();
+        regToken.setRegistrationAuth(registrationAuth.toString().toLowerCase());
+
+        return setupToken(regToken, session, realm, id, TYPE_REGISTRATION_ACCESS_TOKEN, 0);
     }
 
-    public static String createInitialAccessToken(RealmModel realm, UriInfo uri, ClientInitialAccessModel model) {
-        return createToken(realm, uri, model.getId(), TYPE_INITIAL_ACCESS_TOKEN, model.getExpiration() > 0 ? model.getTimestamp() + model.getExpiration() : 0);
+    public static String createInitialAccessToken(KeycloakSession session, RealmModel realm, ClientInitialAccessModel model) {
+        InitialAccessToken initialToken = new InitialAccessToken();
+        return setupToken(initialToken, session, realm, model.getId(), TYPE_INITIAL_ACCESS_TOKEN, model.getExpiration() > 0 ? model.getTimestamp() + model.getExpiration() : 0);
     }
 
-    public static JsonWebToken verifyToken(RealmModel realm, UriInfo uri, String token) {
-        JWSInput input;
-        try {
-            input = new JWSInput(token);
-        } catch (JWSInputException e) {
-            return null;
+    public static TokenVerification verifyToken(KeycloakSession session, RealmModel realm, String token) {
+        if (token == null) {
+            return TokenVerification.error(new RuntimeException("Missing token"));
         }
 
-        if (!RSAProvider.verify(input, realm.getPublicKey())) {
-            return null;
-        }
-
+        String kid;
         JsonWebToken jwt;
         try {
-            jwt = input.readJsonContent(JsonWebToken.class);
-        } catch (JWSInputException e) {
-            return null;
-        }
+            TokenVerifier<JsonWebToken> verifier = TokenVerifier.create(token, JsonWebToken.class)
+                    .withChecks(new TokenVerifier.RealmUrlCheck(getIssuer(session, realm)), TokenVerifier.IS_ACTIVE);
 
-        if (!getIssuer(realm, uri).equals(jwt.getIssuer())) {
-            return null;
-        }
+            SignatureVerifierContext verifierContext = session.getProvider(SignatureProvider.class, verifier.getHeader().getAlgorithm().name()).verifier(verifier.getHeader().getKeyId());
+            verifier.verifierContext(verifierContext);
 
-        if (!jwt.isActive()) {
-            return null;
+            kid = verifierContext.getKid();
+
+            verifier.verify();
+
+            jwt = verifier.getToken();
+        } catch (VerificationException e) {
+            return TokenVerification.error(new RuntimeException("Failed decode token", e));
         }
 
         if (!(TokenUtil.TOKEN_TYPE_BEARER.equals(jwt.getType()) ||
                 TYPE_INITIAL_ACCESS_TOKEN.equals(jwt.getType()) ||
                 TYPE_REGISTRATION_ACCESS_TOKEN.equals(jwt.getType()))) {
-            return null;
+            return TokenVerification.error(new RuntimeException("Invalid type of token"));
         }
 
-        return jwt;
+        return TokenVerification.success(kid, jwt);
     }
 
-    private static String createToken(RealmModel realm, UriInfo uri, String id, String type, int expiration) {
-        JsonWebToken jwt = new JsonWebToken();
-
-        String issuer = getIssuer(realm, uri);
+    private static String setupToken(JsonWebToken jwt, KeycloakSession session, RealmModel realm, String id, String type, int expiration) {
+        String issuer = getIssuer(session, realm);
 
         jwt.type(type);
         jwt.id(id);
@@ -104,12 +127,44 @@ public class ClientRegistrationTokenUtils {
         jwt.issuer(issuer);
         jwt.audience(issuer);
 
-        String token = new JWSBuilder().jsonContent(jwt).rsa256(realm.getPrivateKey());
-        return token;
+        return session.tokens().encode(jwt);
     }
 
-    private static String getIssuer(RealmModel realm, UriInfo uri) {
-        return Urls.realmIssuer(uri.getBaseUri(), realm.getName());
+    private static String getIssuer(KeycloakSession session, RealmModel realm) {
+        return Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName());
+    }
+
+    protected static class TokenVerification {
+
+        private final String kid;
+        private final JsonWebToken jwt;
+        private final RuntimeException error;
+
+        public static TokenVerification success(String kid, JsonWebToken jwt) {
+            return new TokenVerification(kid, jwt, null);
+        }
+
+        public static TokenVerification error(RuntimeException error) {
+            return new TokenVerification(null,null, error);
+        }
+
+        private TokenVerification(String kid, JsonWebToken jwt, RuntimeException error) {
+            this.kid = kid;
+            this.jwt = jwt;
+            this.error = error;
+        }
+
+        public String getKid() {
+            return kid;
+        }
+
+        public JsonWebToken getJwt() {
+            return jwt;
+        }
+
+        public RuntimeException getError() {
+            return error;
+        }
     }
 
 }

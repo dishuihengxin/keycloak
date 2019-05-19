@@ -22,13 +22,17 @@ import org.keycloak.authentication.ClientAuthenticator;
 import org.keycloak.authentication.ClientAuthenticatorFactory;
 import org.keycloak.authorization.admin.AuthorizationService;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.protocol.ClientInstallationProvider;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.protocol.oidc.mappers.AudienceProtocolMapper;
 import org.keycloak.representations.adapters.config.PolicyEnforcerConfig;
 import org.keycloak.services.managers.ClientManager;
 import org.keycloak.util.JsonSerialization;
@@ -51,7 +55,6 @@ public class KeycloakOIDCClientInstallation implements ClientInstallationProvide
         ClientManager.InstallationAdapterConfig rep = new ClientManager.InstallationAdapterConfig();
         rep.setAuthServerUrl(baseUri.toString());
         rep.setRealm(realm.getName());
-        rep.setRealmKey(realm.getPublicKeyPem());
         rep.setSslRequired(realm.getSslRequired().name().toLowerCase());
 
         if (client.isPublicClient() && !client.isBearerOnly()) rep.setPublicClient(true);
@@ -63,6 +66,10 @@ public class KeycloakOIDCClientInstallation implements ClientInstallationProvide
         if (showClientCredentialsAdapterConfig(client)) {
             Map<String, Object> adapterConfig = getClientCredentialsAdapterConfig(session, client);
             rep.setCredentials(adapterConfig);
+        }
+
+        if (showVerifyTokenAudience(client)) {
+            rep.setVerifyTokenAudience(true);
         }
 
         configureAuthorizationSettings(session, client, rep);
@@ -88,11 +95,32 @@ public class KeycloakOIDCClientInstallation implements ClientInstallationProvide
             return false;
         }
 
-        if (client.isBearerOnly() && client.getNodeReRegistrationTimeout() <= 0) {
+        if (client.isBearerOnly() && !client.isServiceAccountsEnabled() && client.getNodeReRegistrationTimeout() <= 0) {
             return false;
         }
 
         return true;
+    }
+
+
+    static boolean showVerifyTokenAudience(ClientModel client) {
+        // We want to verify-token-audience if service client has any client roles
+        if (client.getRoles().size() > 0) {
+            return true;
+        }
+
+        // Check if there is client scope with audience protocol mapper created for particular client. If yes, admin wants verifying token audience
+        String clientId = client.getClientId();
+
+        for (ClientScopeModel clientScope : client.getRealm().getClientScopes()) {
+            for (ProtocolMapperModel protocolMapper : clientScope.getProtocolMappers()) {
+                if (AudienceProtocolMapper.PROVIDER_ID.equals(protocolMapper.getProtocolMapper()) && (clientId.equals(protocolMapper.getConfig().get(AudienceProtocolMapper.INCLUDED_CLIENT_AUDIENCE)))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
 
@@ -152,11 +180,11 @@ public class KeycloakOIDCClientInstallation implements ClientInstallationProvide
     }
 
     private void configureAuthorizationSettings(KeycloakSession session, ClientModel client, ClientManager.InstallationAdapterConfig rep) {
-        if (new AuthorizationService(session, client, null).isEnabled()) {
+        if (new AuthorizationService(session, client, null, null).isEnabled()) {
             PolicyEnforcerConfig enforcerConfig = new PolicyEnforcerConfig();
 
             enforcerConfig.setEnforcementMode(null);
-            enforcerConfig.setPaths(null);
+            enforcerConfig.setLazyLoadPaths(null);
 
             rep.setEnforcerConfig(enforcerConfig);
 

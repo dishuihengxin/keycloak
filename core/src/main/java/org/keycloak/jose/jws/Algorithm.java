@@ -24,23 +24,34 @@ import org.keycloak.jose.jws.crypto.SignatureProvider;
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
+@Deprecated
 public enum Algorithm {
 
-    none(null),
-    HS256(null),
-    HS384(null),
-    HS512(null),
-    RS256(new RSAProvider()),
-    RS384(new RSAProvider()),
-    RS512(new RSAProvider()),
-    ES256(null),
-    ES384(null),
-    ES512(null)
+    none(null, null),
+    HS256(AlgorithmType.HMAC, null),
+    HS384(AlgorithmType.HMAC, null),
+    HS512(AlgorithmType.HMAC, null),
+    RS256(AlgorithmType.RSA, new RSAProvider()),
+    RS384(AlgorithmType.RSA, new RSAProvider()),
+    RS512(AlgorithmType.RSA, new RSAProvider()),
+    PS256(AlgorithmType.RSA, null),
+    PS384(AlgorithmType.RSA, null),
+    PS512(AlgorithmType.RSA, null),
+    ES256(AlgorithmType.ECDSA, null),
+    ES384(AlgorithmType.ECDSA, null),
+    ES512(AlgorithmType.ECDSA, null)
     ;
+
+    private AlgorithmType type;
     private SignatureProvider provider;
 
-    Algorithm(SignatureProvider provider) {
+    Algorithm(AlgorithmType type, SignatureProvider provider) {
+        this.type = type;
         this.provider = provider;
+    }
+
+    public AlgorithmType getType() {
+        return type;
     }
 
     public SignatureProvider getProvider() {

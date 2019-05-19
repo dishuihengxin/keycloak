@@ -20,51 +20,75 @@ package org.keycloak.models.cache.infinispan;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleContainerModel;
 import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserConsentModel;
-import org.keycloak.models.UserCredentialModel;
-import org.keycloak.models.UserCredentialValueModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.cache.CachedUserModel;
 import org.keycloak.models.cache.infinispan.entities.CachedUser;
-import org.keycloak.models.cache.infinispan.entities.CachedUserConsent;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.models.utils.RoleUtils;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
-public class UserAdapter implements UserModel {
-    protected UserModel updated;
-    protected CachedUser cached;
-    protected UserCacheSession userProviderCache;
-    protected KeycloakSession keycloakSession;
-    protected RealmModel realm;
+public class UserAdapter implements CachedUserModel {
+
+    private final Supplier<UserModel> modelSupplier;
+    protected final CachedUser cached;
+    protected final UserCacheSession userProviderCache;
+    protected final KeycloakSession keycloakSession;
+    protected final RealmModel realm;
+    protected volatile UserModel updated;
 
     public UserAdapter(CachedUser cached, UserCacheSession userProvider, KeycloakSession keycloakSession, RealmModel realm) {
         this.cached = cached;
         this.userProviderCache = userProvider;
         this.keycloakSession = keycloakSession;
         this.realm = realm;
+        this.modelSupplier = this::getUserModel;
     }
 
-    protected void getDelegateForUpdate() {
+    @Override
+    public UserModel getDelegateForUpdate() {
         if (updated == null) {
             userProviderCache.registerUserInvalidation(realm, cached);
-            updated = userProviderCache.getDelegate().getUserById(getId(), realm);
+            updated = modelSupplier.get();
             if (updated == null) throw new IllegalStateException("Not found in database");
         }
+        return updated;
     }
+
+    @Override
+    public boolean isMarkedForEviction() {
+        return updated != null;
+    }
+
+    @Override
+    public void invalidate() {
+        getDelegateForUpdate();
+    }
+
+    @Override
+    public long getCacheTimestamp() {
+        return cached.getCacheTimestamp();
+    }
+
+    @Override
+    public ConcurrentHashMap getCachedWith() {
+        return cached.getCachedWith();
+    }
+
     @Override
     public String getId() {
         if (updated != null) return updated.getId();
@@ -102,12 +126,6 @@ public class UserAdapter implements UserModel {
     }
 
     @Override
-    public boolean isOtpEnabled() {
-        if (updated != null) return updated.isOtpEnabled();
-        return cached.isTotp();
-    }
-
-    @Override
     public void setEnabled(boolean enabled) {
         getDelegateForUpdate();
         updated.setEnabled(enabled);
@@ -134,26 +152,26 @@ public class UserAdapter implements UserModel {
     @Override
     public String getFirstAttribute(String name) {
         if (updated != null) return updated.getFirstAttribute(name);
-        return cached.getAttributes().getFirst(name);
+        return cached.getAttributes(modelSupplier).getFirst(name);
     }
 
     @Override
     public List<String> getAttribute(String name) {
         if (updated != null) return updated.getAttribute(name);
-        List<String> result = cached.getAttributes().get(name);
+        List<String> result = cached.getAttributes(modelSupplier).get(name);
         return (result == null) ? Collections.<String>emptyList() : result;
     }
 
     @Override
     public Map<String, List<String>> getAttributes() {
         if (updated != null) return updated.getAttributes();
-        return cached.getAttributes();
+        return cached.getAttributes(modelSupplier);
     }
 
     @Override
     public Set<String> getRequiredActions() {
         if (updated != null) return updated.getRequiredActions();
-        return cached.getRequiredActions();
+        return cached.getRequiredActions(modelSupplier);
     }
 
     @Override
@@ -230,30 +248,6 @@ public class UserAdapter implements UserModel {
     }
 
     @Override
-    public void setOtpEnabled(boolean totp) {
-        getDelegateForUpdate();
-        updated.setOtpEnabled(totp);
-    }
-
-    @Override
-    public void updateCredential(UserCredentialModel cred) {
-        getDelegateForUpdate();
-        updated.updateCredential(cred);
-    }
-
-    @Override
-    public List<UserCredentialValueModel> getCredentialsDirectly() {
-        if (updated != null) return updated.getCredentialsDirectly();
-        return cached.getCredentials();
-    }
-
-    @Override
-    public void updateCredentialDirectly(UserCredentialValueModel cred) {
-        getDelegateForUpdate();
-        updated.updateCredentialDirectly(cred);
-    }
-
-    @Override
     public String getFederationLink() {
         if (updated != null) return updated.getFederationLink();
         return cached.getFederationLink();
@@ -263,7 +257,7 @@ public class UserAdapter implements UserModel {
     public void setFederationLink(String link) {
         getDelegateForUpdate();
         updated.setFederationLink(link);
-   }
+    }
 
     @Override
     public String getServiceAccountClientLink() {
@@ -312,13 +306,13 @@ public class UserAdapter implements UserModel {
     @Override
     public boolean hasRole(RoleModel role) {
         if (updated != null) return updated.hasRole(role);
-        if (cached.getRoleMappings().contains(role.getId())) return true;
+        if (cached.getRoleMappings(modelSupplier).contains(role.getId())) return true;
 
         Set<RoleModel> mappings = getRoleMappings();
         for (RoleModel mapping: mappings) {
            if (mapping.hasRole(role)) return true;
         }
-        return false;
+        return RoleUtils.hasRoleFromGroup(getGroups(), role, true);
     }
 
     @Override
@@ -331,7 +325,7 @@ public class UserAdapter implements UserModel {
     public Set<RoleModel> getRoleMappings() {
         if (updated != null) return updated.getRoleMappings();
         Set<RoleModel> roles = new HashSet<RoleModel>();
-        for (String id : cached.getRoleMappings()) {
+        for (String id : cached.getRoleMappings(modelSupplier)) {
             RoleModel roleById = keycloakSession.realms().getRoleById(id, realm);
             if (roleById == null) {
                 // chance that role was removed, so just delete to persistence and get user invalidated
@@ -353,8 +347,8 @@ public class UserAdapter implements UserModel {
     @Override
     public Set<GroupModel> getGroups() {
         if (updated != null) return updated.getGroups();
-        Set<GroupModel> groups = new HashSet<GroupModel>();
-        for (String id : cached.getGroups()) {
+        Set<GroupModel> groups = new LinkedHashSet<>();
+        for (String id : cached.getGroups(modelSupplier)) {
             GroupModel groupModel = keycloakSession.realms().getGroupById(id, realm);
             if (groupModel == null) {
                 // chance that role was removed, so just delete to persistence and get user invalidated
@@ -383,73 +377,9 @@ public class UserAdapter implements UserModel {
     @Override
     public boolean isMemberOf(GroupModel group) {
         if (updated != null) return updated.isMemberOf(group);
-        if (cached.getGroups().contains(group.getId())) return true;
+        if (cached.getGroups(modelSupplier).contains(group.getId())) return true;
         Set<GroupModel> roles = getGroups();
-        return KeycloakModelUtils.isMember(roles, group);
-    }
-
-    @Override
-    public void addConsent(UserConsentModel consent) {
-        getDelegateForUpdate();
-        updated.addConsent(consent);
-    }
-
-    @Override
-    public UserConsentModel getConsentByClient(String clientId) {
-        if (updated != null) return updated.getConsentByClient(clientId);
-        CachedUserConsent cachedConsent = cached.getConsents().get(clientId);
-        if (cachedConsent == null) {
-            return null;
-        }
-
-        return toConsentModel(cachedConsent);
-    }
-
-    @Override
-    public List<UserConsentModel> getConsents() {
-        if (updated != null) return updated.getConsents();
-        Collection<CachedUserConsent> cachedConsents = cached.getConsents().values();
-
-        List<UserConsentModel> result = new LinkedList<>();
-        for (CachedUserConsent cachedConsent : cachedConsents) {
-            UserConsentModel consent = toConsentModel(cachedConsent);
-            if (consent != null) {
-                result.add(consent);
-            }
-        }
-        return result;
-    }
-
-    @Override
-    public void updateConsent(UserConsentModel consent) {
-        getDelegateForUpdate();
-        updated.updateConsent(consent);
-    }
-
-    @Override
-    public boolean revokeConsentForClient(String clientId) {
-        getDelegateForUpdate();
-        return updated.revokeConsentForClient(clientId);
-    }
-
-    private UserConsentModel toConsentModel(CachedUserConsent cachedConsent) {
-        ClientModel client = keycloakSession.realms().getClientById(cachedConsent.getClientDbId(), realm);
-        if (client == null) {
-            return null;
-        }
-
-        UserConsentModel consentModel = new UserConsentModel(client);
-
-        for (String roleId : cachedConsent.getRoleIds()) {
-            RoleModel role = keycloakSession.realms().getRoleById(roleId, realm);
-            if (role != null) {
-                consentModel.addGrantedRole(role);
-            }
-        }
-        for (ProtocolMapperModel protocolMapper : cachedConsent.getProtocolMappers()) {
-            consentModel.addGrantedProtocolMapper(protocolMapper);
-        }
-        return consentModel;
+        return RoleUtils.isMember(roles, group);
     }
 
     @Override
@@ -466,7 +396,7 @@ public class UserAdapter implements UserModel {
         return getId().hashCode();
     }
 
-
-
-
+    private UserModel getUserModel() {
+        return userProviderCache.getDelegate().getUserById(cached.getId(), realm);
+    }
 }

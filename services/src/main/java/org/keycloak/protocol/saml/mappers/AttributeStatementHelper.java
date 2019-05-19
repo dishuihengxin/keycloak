@@ -17,15 +17,16 @@
 
 package org.keycloak.protocol.saml.mappers;
 
-import org.keycloak.models.ProtocolMapperModel;
-import org.keycloak.protocol.ProtocolMapperUtils;
-import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.protocol.saml.SamlProtocol;
-import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.dom.saml.v2.assertion.AttributeStatementType;
 import org.keycloak.dom.saml.v2.assertion.AttributeType;
+import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.protocol.ProtocolMapperUtils;
+import org.keycloak.protocol.saml.SamlProtocol;
+import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,13 +53,22 @@ public class AttributeStatementHelper {
         attributeStatement.addAttribute(new AttributeStatementType.ASTChoiceType(attribute));
     }
 
+    public static void addAttributes(AttributeStatementType attributeStatement, ProtocolMapperModel mappingModel,
+                                    Collection<String> attributeValues) {
+
+        AttributeType attribute = createAttributeType(mappingModel);
+        attributeValues.forEach(attribute::addAttributeValue);
+
+        attributeStatement.addAttribute(new AttributeStatementType.ASTChoiceType(attribute));
+    }
+
     public static AttributeType createAttributeType(ProtocolMapperModel mappingModel) {
         String attributeName = mappingModel.getConfig().get(SAML_ATTRIBUTE_NAME);
         AttributeType attribute = new AttributeType(attributeName);
         String attributeType = mappingModel.getConfig().get(SAML_ATTRIBUTE_NAMEFORMAT);
         String attributeNameFormat = JBossSAMLURIConstants.ATTRIBUTE_FORMAT_BASIC.get();
-        if ("URI Reference".equals(attributeType)) attributeNameFormat = JBossSAMLURIConstants.ATTRIBUTE_FORMAT_URI.get();
-        else if ("Unspecified".equals(attributeType)) attributeNameFormat = "urn:oasis:names:tc:SAML2.0:attrname-format:unspecified";
+        if (URI_REFERENCE.equals(attributeType)) attributeNameFormat = JBossSAMLURIConstants.ATTRIBUTE_FORMAT_URI.get();
+        else if (UNSPECIFIED.equals(attributeType)) attributeNameFormat = JBossSAMLURIConstants.ATTRIBUTE_FORMAT_UNSPECIFIED.get();
         attribute.setNameFormat(attributeNameFormat);
         String friendlyName = mappingModel.getConfig().get(FRIENDLY_NAME);
         if (friendlyName != null && !friendlyName.trim().equals("")) attribute.setFriendlyName(friendlyName);
@@ -85,17 +95,15 @@ public class AttributeStatementHelper {
         types.add(AttributeStatementHelper.URI_REFERENCE);
         types.add(AttributeStatementHelper.UNSPECIFIED);
         property.setType(ProviderConfigProperty.LIST_TYPE);
-        property.setDefaultValue(types);
+        property.setOptions(types);
         configProperties.add(property);
 
     }
-    public static ProtocolMapperModel createAttributeMapper(String name, String userAttribute, String samlAttributeName, String nameFormat,  String friendlyName, boolean consentRequired, String consentText, String mapperId) {
+    public static ProtocolMapperModel createAttributeMapper(String name, String userAttribute, String samlAttributeName, String nameFormat,  String friendlyName, String mapperId) {
         ProtocolMapperModel mapper = new ProtocolMapperModel();
         mapper.setName(name);
         mapper.setProtocolMapper(mapperId);
         mapper.setProtocol(SamlProtocol.LOGIN_PROTOCOL);
-        mapper.setConsentRequired(consentRequired);
-        mapper.setConsentText(consentText);
         Map<String, String> config = new HashMap<String, String>();
         if (userAttribute != null) config.put(ProtocolMapperUtils.USER_ATTRIBUTE, userAttribute);
         config.put(SAML_ATTRIBUTE_NAME, samlAttributeName);

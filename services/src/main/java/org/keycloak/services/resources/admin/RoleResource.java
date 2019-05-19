@@ -19,19 +19,23 @@ package org.keycloak.services.resources.admin;
 
 import org.jboss.resteasy.spi.NotFoundException;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.utils.ModelToRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
 import javax.ws.rs.core.UriInfo;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
+ * @resource Roles
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
@@ -55,16 +59,35 @@ public abstract class RoleResource {
     protected void updateRole(RoleRepresentation rep, RoleModel role) {
         role.setName(rep.getName());
         role.setDescription(rep.getDescription());
-        if (rep.isScopeParamRequired() != null) role.setScopeParamRequired(rep.isScopeParamRequired());
+
+        if (rep.getAttributes() != null) {
+            Set<String> attrsToRemove = new HashSet<>(role.getAttributes().keySet());
+            attrsToRemove.removeAll(rep.getAttributes().keySet());
+
+            for (Map.Entry<String, List<String>> attr : rep.getAttributes().entrySet()) {
+                role.setAttribute(attr.getKey(), attr.getValue());
+            }
+
+            for (String attr : attrsToRemove) {
+                role.removeAttribute(attr);
+            }
+        }
     }
 
-    protected void addComposites(AdminEventBuilder adminEvent, UriInfo uriInfo, List<RoleRepresentation> roles, RoleModel role) {
+    protected void addComposites(AdminPermissionEvaluator auth, AdminEventBuilder adminEvent, UriInfo uriInfo, List<RoleRepresentation> roles, RoleModel role) {
         for (RoleRepresentation rep : roles) {
             RoleModel composite = realm.getRoleById(rep.getId());
             if (composite == null) {
                 throw new NotFoundException("Could not find composite role");
             }
+            auth.roles().requireMapComposite(composite);
             role.addCompositeRole(composite);
+        }
+
+        if (role.isClientRole()) {
+            adminEvent.resource(ResourceType.CLIENT_ROLE);
+        } else {
+            adminEvent.resource(ResourceType.REALM_ROLE);
         }
 
         adminEvent.operation(OperationType.CREATE).resourcePath(uriInfo).representation(roles).success();
@@ -75,7 +98,7 @@ public abstract class RoleResource {
 
         Set<RoleRepresentation> composites = new HashSet<RoleRepresentation>(role.getComposites().size());
         for (RoleModel composite : role.getComposites()) {
-            composites.add(ModelToRepresentation.toRepresentation(composite));
+            composites.add(ModelToRepresentation.toBriefRepresentation(composite));
         }
         return composites;
     }
@@ -86,7 +109,7 @@ public abstract class RoleResource {
         Set<RoleRepresentation> composites = new HashSet<RoleRepresentation>(role.getComposites().size());
         for (RoleModel composite : role.getComposites()) {
             if (composite.getContainer() instanceof RealmModel)
-                composites.add(ModelToRepresentation.toRepresentation(composite));
+                composites.add(ModelToRepresentation.toBriefRepresentation(composite));
         }
         return composites;
     }
@@ -97,7 +120,7 @@ public abstract class RoleResource {
         Set<RoleRepresentation> composites = new HashSet<RoleRepresentation>(role.getComposites().size());
         for (RoleModel composite : role.getComposites()) {
             if (composite.getContainer().equals(app))
-                composites.add(ModelToRepresentation.toRepresentation(composite));
+                composites.add(ModelToRepresentation.toBriefRepresentation(composite));
         }
         return composites;
     }
@@ -109,6 +132,12 @@ public abstract class RoleResource {
                 throw new NotFoundException("Could not find composite role");
             }
             role.removeCompositeRole(composite);
+        }
+
+        if (role.isClientRole()) {
+            adminEvent.resource(ResourceType.CLIENT_ROLE);
+        } else {
+            adminEvent.resource(ResourceType.REALM_ROLE);
         }
 
         adminEvent.operation(OperationType.DELETE).resourcePath(uriInfo).representation(roles).success();

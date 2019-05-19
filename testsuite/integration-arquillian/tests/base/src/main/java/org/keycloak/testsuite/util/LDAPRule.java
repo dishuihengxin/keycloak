@@ -17,11 +17,13 @@
 
 package org.keycloak.testsuite.util;
 
+import org.junit.Assume;
+import org.junit.rules.ExternalResource;
+import org.keycloak.models.LDAPConstants;
+import org.keycloak.util.ldap.LDAPEmbeddedServer;
+
 import java.util.Map;
 import java.util.Properties;
-
-import org.junit.rules.ExternalResource;
-import org.keycloak.util.ldap.LDAPEmbeddedServer;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -30,13 +32,30 @@ public class LDAPRule extends ExternalResource {
 
     public static final String LDAP_CONNECTION_PROPERTIES_LOCATION = "classpath:ldap/ldap-connection.properties";
 
-    protected LDAPTestConfiguration ldapTestConfiguration;
-    protected LDAPEmbeddedServer ldapEmbeddedServer;
+    private static final String PROPERTY_ENABLE_SSL = "enableSSL";
+
+    private static final String PROPERTY_KEYSTORE_FILE = "keystoreFile";
+
+    private static final String PRIVATE_KEY = "keystore/keycloak.jks";
+
+    private static final String PROPERTY_CERTIFICATE_PASSWORD = "certificatePassword";
+
+    LDAPTestConfiguration ldapTestConfiguration;
+    private LDAPEmbeddedServer ldapEmbeddedServer;
+    private LDAPAssume assume;
+
+    public LDAPRule assumeTrue(LDAPAssume assume) {
+        this.assume = assume;
+        return this;
+    }
+
 
     @Override
     protected void before() throws Throwable {
         String connectionPropsLocation = getConnectionPropertiesLocation();
         ldapTestConfiguration = LDAPTestConfiguration.readConfiguration(connectionPropsLocation);
+
+        Assume.assumeTrue("Assumption in LDAPRule is false. Skiping the test", assume==null || assume.assumeTrue(ldapTestConfiguration));
 
         if (ldapTestConfiguration.isStartEmbeddedLdapServer()) {
             ldapEmbeddedServer = createServer();
@@ -66,6 +85,9 @@ public class LDAPRule extends ExternalResource {
         Properties defaultProperties = new Properties();
         defaultProperties.setProperty(LDAPEmbeddedServer.PROPERTY_DSF, LDAPEmbeddedServer.DSF_INMEMORY);
         defaultProperties.setProperty(LDAPEmbeddedServer.PROPERTY_LDIF_FILE, "classpath:ldap/users.ldif");
+        defaultProperties.setProperty(PROPERTY_ENABLE_SSL, "true");
+        defaultProperties.setProperty(PROPERTY_CERTIFICATE_PASSWORD, "secret");
+        defaultProperties.setProperty(PROPERTY_KEYSTORE_FILE, this.getClass().getClassLoader().getResource(LDAPRule.PRIVATE_KEY).getFile());
 
         return new LDAPEmbeddedServer(defaultProperties);
     }
@@ -76,5 +98,13 @@ public class LDAPRule extends ExternalResource {
 
     public int getSleepTime() {
         return ldapTestConfiguration.getSleepTime();
+    }
+
+
+    /** Allows to run particular LDAP test just under specific conditions (eg. some test running just on Active Directory) **/
+    public interface LDAPAssume {
+
+        boolean assumeTrue(LDAPTestConfiguration ldapConfig);
+
     }
 }

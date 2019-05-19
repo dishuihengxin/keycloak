@@ -21,6 +21,7 @@ import org.jboss.arquillian.test.api.ArquillianResource;
 import org.junit.Test;
 import org.keycloak.admin.client.resource.AttackDetectionResource;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.util.AdminEventPaths;
 import org.keycloak.testsuite.util.OAuthClient;
@@ -62,18 +63,18 @@ public class AttackDetectionResourceTest extends AbstractAdminTest {
         oauthClient.doLogin("test-user2", "invalid");
         oauthClient.doLogin("nosuchuser", "invalid");
 
-        assertBruteForce(detection.bruteForceUserStatus(findUser("test-user@localhost").getId()), 3, true, true);
+        assertBruteForce(detection.bruteForceUserStatus(findUser("test-user@localhost").getId()), 2, true, true);
         assertBruteForce(detection.bruteForceUserStatus(findUser("test-user2").getId()), 2, true, true);
         assertBruteForce(detection.bruteForceUserStatus("nosuchuser"), 0, false, false);
 
         detection.clearBruteForceForUser(findUser("test-user@localhost").getId());
-        assertAdminEvents.assertEvent("test", OperationType.DELETE, AdminEventPaths.attackDetectionClearBruteForceForUserPath(findUser("test-user@localhost").getId()));
+        assertAdminEvents.assertEvent("test", OperationType.DELETE, AdminEventPaths.attackDetectionClearBruteForceForUserPath(findUser("test-user@localhost").getId()), ResourceType.USER_LOGIN_FAILURE);
 
         assertBruteForce(detection.bruteForceUserStatus(findUser("test-user@localhost").getId()), 0, false, false);
         assertBruteForce(detection.bruteForceUserStatus(findUser("test-user2").getId()), 2, true, true);
 
         detection.clearAllBruteForce();
-        assertAdminEvents.assertEvent("test", OperationType.DELETE, AdminEventPaths.attackDetectionClearAllBruteForcePath());
+        assertAdminEvents.assertEvent("test", OperationType.DELETE, AdminEventPaths.attackDetectionClearAllBruteForcePath(), ResourceType.USER_LOGIN_FAILURE);
 
         assertBruteForce(detection.bruteForceUserStatus(findUser("test-user@localhost").getId()), 0, false, false);
         assertBruteForce(detection.bruteForceUserStatus(findUser("test-user2").getId()), 0, false, false);

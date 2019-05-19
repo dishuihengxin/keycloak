@@ -16,24 +16,27 @@
  */
 package org.keycloak.saml;
 
-import java.net.URI;
-
 import org.keycloak.dom.saml.v2.assertion.NameIDType;
 import org.keycloak.dom.saml.v2.protocol.AuthnRequestType;
-import org.keycloak.saml.common.exceptions.ConfigurationException;
 import org.keycloak.saml.processing.api.saml.v2.request.SAML2Request;
 import org.keycloak.saml.processing.core.saml.v2.common.IDGenerator;
 import org.keycloak.saml.processing.core.saml.v2.util.XMLTimeUtil;
 import org.w3c.dom.Document;
 
+import java.net.URI;
+import java.util.LinkedList;
+import java.util.List;
+import org.keycloak.dom.saml.v2.protocol.ExtensionsType;
+
 /**
  * @author pedroigor
  */
-public class SAML2AuthnRequestBuilder {
+public class SAML2AuthnRequestBuilder implements SamlProtocolExtensionsAwareBuilder<SAML2AuthnRequestBuilder> {
 
     private final AuthnRequestType authnRequestType;
     protected String destination;
     protected String issuer;
+    protected final List<NodeGenerator> extensions = new LinkedList<>();
 
     public SAML2AuthnRequestBuilder destination(String destination) {
         this.destination = destination;
@@ -45,16 +48,23 @@ public class SAML2AuthnRequestBuilder {
         return this;
     }
 
+    @Override
+    public SAML2AuthnRequestBuilder addExtension(NodeGenerator extension) {
+        this.extensions.add(extension);
+        return this;
+    }
+
     public SAML2AuthnRequestBuilder() {
-        try {
-            this.authnRequestType = new AuthnRequestType(IDGenerator.create("ID_"), XMLTimeUtil.getIssueInstant());
-        } catch (ConfigurationException e) {
-            throw new RuntimeException("Could not create SAML AuthnRequest builder.", e);
-        }
+        this.authnRequestType = new AuthnRequestType(IDGenerator.create("ID_"), XMLTimeUtil.getIssueInstant());
     }
 
     public SAML2AuthnRequestBuilder assertionConsumerUrl(String assertionConsumerUrl) {
         this.authnRequestType.setAssertionConsumerServiceURL(URI.create(assertionConsumerUrl));
+        return this;
+    }
+
+    public SAML2AuthnRequestBuilder assertionConsumerUrl(URI assertionConsumerUrl) {
+        this.authnRequestType.setAssertionConsumerServiceURL(assertionConsumerUrl);
         return this;
     }
 
@@ -89,6 +99,14 @@ public class SAML2AuthnRequestBuilder {
             authnRequestType.setIssuer(nameIDType);
 
             authnRequestType.setDestination(URI.create(this.destination));
+
+            if (! this.extensions.isEmpty()) {
+                ExtensionsType extensionsType = new ExtensionsType();
+                for (NodeGenerator extension : this.extensions) {
+                    extensionsType.addExtension(extension);
+                }
+                authnRequestType.setExtensions(extensionsType);
+            }
 
             return new SAML2Request().convert(authnRequestType);
         } catch (Exception e) {

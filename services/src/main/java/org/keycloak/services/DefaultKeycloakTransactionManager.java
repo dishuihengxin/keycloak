@@ -16,9 +16,14 @@
  */
 package org.keycloak.services;
 
+import org.jboss.logging.Logger;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakTransaction;
 import org.keycloak.models.KeycloakTransactionManager;
+import org.keycloak.transaction.JtaTransactionManagerLookup;
+import org.keycloak.transaction.JtaTransactionWrapper;
 
+import javax.transaction.TransactionManager;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -27,13 +32,21 @@ import java.util.List;
  */
 public class DefaultKeycloakTransactionManager implements KeycloakTransactionManager {
 
-    public static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+    private static final Logger logger = Logger.getLogger(DefaultKeycloakTransactionManager.class);
 
     private List<KeycloakTransaction> prepare = new LinkedList<KeycloakTransaction>();
     private List<KeycloakTransaction> transactions = new LinkedList<KeycloakTransaction>();
     private List<KeycloakTransaction> afterCompletion = new LinkedList<KeycloakTransaction>();
     private boolean active;
     private boolean rollback;
+    private KeycloakSession session;
+    private JTAPolicy jtaPolicy = JTAPolicy.REQUIRES_NEW;
+    // Used to prevent double committing/rollback if there is an uncaught exception
+    protected boolean completed;
+
+    public DefaultKeycloakTransactionManager(KeycloakSession session) {
+        this.session = session;
+    }
 
     @Override
     public void enlist(KeycloakTransaction transaction) {
@@ -63,9 +76,32 @@ public class DefaultKeycloakTransactionManager implements KeycloakTransactionMan
     }
 
     @Override
+    public JTAPolicy getJTAPolicy() {
+        return jtaPolicy;
+    }
+
+    @Override
+    public void setJTAPolicy(JTAPolicy policy) {
+        jtaPolicy = policy;
+
+    }
+
+    @Override
     public void begin() {
         if (active) {
              throw new IllegalStateException("Transaction already active");
+        }
+
+        completed = false;
+
+        if (jtaPolicy == JTAPolicy.REQUIRES_NEW) {
+            JtaTransactionManagerLookup jtaLookup = session.getProvider(JtaTransactionManagerLookup.class);
+            if (jtaLookup != null) {
+                TransactionManager tm = jtaLookup.getTransactionManager();
+                if (tm != null) {
+                   enlist(new JtaTransactionWrapper(session.getKeycloakSessionFactory(), tm));
+                }
+            }
         }
 
         for (KeycloakTransaction tx : transactions) {
@@ -77,6 +113,12 @@ public class DefaultKeycloakTransactionManager implements KeycloakTransactionMan
 
     @Override
     public void commit() {
+        if (completed) {
+            return;
+        } else {
+            completed = true;
+        }
+
         RuntimeException exception = null;
         for (KeycloakTransaction tx : prepare) {
             try {
@@ -111,7 +153,7 @@ public class DefaultKeycloakTransactionManager implements KeycloakTransactionMan
                 try {
                     tx.rollback();
                 } catch (RuntimeException e) {
-                    logger.exceptionDuringRollback(e);
+                    ServicesLogger.LOGGER.exceptionDuringRollback(e);
                 }
             }
         }
@@ -124,6 +166,12 @@ public class DefaultKeycloakTransactionManager implements KeycloakTransactionMan
 
     @Override
     public void rollback() {
+        if (completed) {
+            return;
+        } else {
+            completed = true;
+        }
+
         RuntimeException exception = null;
         rollback(exception);
     }

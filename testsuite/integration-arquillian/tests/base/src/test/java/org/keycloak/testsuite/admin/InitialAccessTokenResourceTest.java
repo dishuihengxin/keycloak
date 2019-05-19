@@ -20,13 +20,17 @@ package org.keycloak.testsuite.admin;
 import org.junit.Before;
 import org.junit.Test;
 import org.keycloak.admin.client.resource.ClientInitialAccessResource;
+import org.keycloak.client.registration.ClientRegistrationException;
 import org.keycloak.common.util.Time;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.representations.idm.ClientInitialAccessCreatePresentation;
 import org.keycloak.representations.idm.ClientInitialAccessPresentation;
+import org.keycloak.testsuite.Assert;
 import org.keycloak.testsuite.util.AdminEventPaths;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -54,7 +58,7 @@ public class InitialAccessTokenResourceTest extends AbstractAdminTest {
         int time = Time.currentTime();
 
         ClientInitialAccessPresentation response = resource.create(rep);
-        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(response.getId()), rep);
+        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(response.getId()), rep, ResourceType.CLIENT_INITIAL_ACCESS_MODEL);
 
         assertNotNull(response.getId());
         assertEquals(new Integer(2), response.getCount());
@@ -65,12 +69,12 @@ public class InitialAccessTokenResourceTest extends AbstractAdminTest {
 
         rep.setCount(3);
         response = resource.create(rep);
-        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(response.getId()), rep);
+        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(response.getId()), rep, ResourceType.CLIENT_INITIAL_ACCESS_MODEL);
 
         rep.setCount(4);
         response = resource.create(rep);
         String lastId = response.getId();
-        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(lastId), rep);
+        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.clientInitialAccessPath(lastId), rep, ResourceType.CLIENT_INITIAL_ACCESS_MODEL);
 
         List<ClientInitialAccessPresentation> list = resource.list();
         assertEquals(3, list.size());
@@ -80,11 +84,47 @@ public class InitialAccessTokenResourceTest extends AbstractAdminTest {
 
         // Delete last and assert it was deleted
         resource.delete(lastId);
-        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.clientInitialAccessPath(lastId));
+        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.clientInitialAccessPath(lastId), ResourceType.CLIENT_INITIAL_ACCESS_MODEL);
 
         list = resource.list();
         assertEquals(2, list.size());
         assertEquals(5, list.get(0).getCount() + list.get(1).getCount());
+    }
+
+
+    @Test
+    public void testPeriodicExpiration() throws ClientRegistrationException, InterruptedException {
+        ClientInitialAccessPresentation response1 = resource.create(new ClientInitialAccessCreatePresentation(1, 1));
+        ClientInitialAccessPresentation response2 = resource.create(new ClientInitialAccessCreatePresentation(1000, 1));
+        ClientInitialAccessPresentation response3 = resource.create(new ClientInitialAccessCreatePresentation(1000, 0));
+        ClientInitialAccessPresentation response4 = resource.create(new ClientInitialAccessCreatePresentation(0, 1));
+
+        List<ClientInitialAccessPresentation> list = resource.list();
+        assertEquals(4, list.size());
+
+        setTimeOffset(10);
+
+        testingClient.testing().removeExpired(REALM_NAME);
+
+        list = resource.list();
+        assertEquals(2, list.size());
+
+        List<String> remainingIds = list.stream()
+                .map(initialAccessPresentation -> initialAccessPresentation.getId())
+                .collect(Collectors.toList());
+
+        Assert.assertNames(remainingIds, response2.getId(), response4.getId());
+
+        setTimeOffset(2000);
+
+        testingClient.testing().removeExpired(REALM_NAME);
+
+        list = resource.list();
+        assertEquals(1, list.size());
+        Assert.assertEquals(list.get(0).getId(), response4.getId());
+
+        // Cleanup
+        realm.clientInitialAccess().delete(response4.getId());
     }
 
 }

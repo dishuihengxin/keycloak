@@ -1,6 +1,7 @@
 package org.keycloak.testsuite.console.page.clients.mappers;
 
 import org.keycloak.representations.idm.ProtocolMapperRepresentation;
+import org.keycloak.testsuite.console.page.clients.Client;
 import org.keycloak.testsuite.console.page.fragment.DataTable;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
@@ -8,7 +9,8 @@ import org.openqa.selenium.support.FindBy;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.keycloak.testsuite.console.page.clients.Client;
+
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 
 /**
  *
@@ -42,17 +44,14 @@ public class ClientMappers extends Client {
         }
 
         public void createMapper() {
-            waitForBody();
             clickHeaderLink(CREATE);
         }
 
         public void addBuiltin() {
-            waitForBody();
             clickHeaderLink(ADD_BUILTIN);
         }
 
         public void clickMapper(String mapperName) {
-            waitForBody();
             body().findElement(By.linkText(mapperName)).click();
         }
 
@@ -61,7 +60,6 @@ public class ClientMappers extends Client {
         }
 
         private void clickMapperActionButton(String mapperName, String buttonText) {
-            waitForBody();
             clickRowActionButton(getRowByLinkText(mapperName), buttonText);
         }
 
@@ -100,9 +98,9 @@ public class ClientMappers extends Client {
             List<WebElement> cols = row.findElements(By.tagName("td"));
 
 
-            mappingsRepresentation.setName(cols.get(0).getText());
+            mappingsRepresentation.setName(getTextFromElement(cols.get(0)));
             //mappingsRepresentation.setProtocol(cols.get(1).getText());
-            mappingsRepresentation.setProtocolMapper(cols.get(2).getText());
+            mappingsRepresentation.setProtocolMapper(getTextFromElement(cols.get(2)));
 
             return mappingsRepresentation;
         }

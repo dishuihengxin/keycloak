@@ -101,20 +101,31 @@ public class AuthenticatedActionsHandler {
         if (!deployment.isCors()) return false;
         KeycloakSecurityContext securityContext = facade.getSecurityContext();
         String origin = facade.getRequest().getHeader(CorsHeaders.ORIGIN);
+        String exposeHeaders = deployment.getCorsExposedHeaders();
+
+        if (deployment.getPolicyEnforcer() != null) {
+            if (exposeHeaders != null) {
+                exposeHeaders += ",";
+            } else {
+                exposeHeaders = "";
+            }
+
+            exposeHeaders += "WWW-Authenticate";
+        }
+
         String requestOrigin = UriUtils.getOrigin(facade.getRequest().getURI());
         log.debugv("Origin: {0} uri: {1}", origin, facade.getRequest().getURI());
         if (securityContext != null && origin != null && !origin.equals(requestOrigin)) {
             AccessToken token = securityContext.getToken();
             Set<String> allowedOrigins = token.getAllowedOrigins();
-            if (log.isDebugEnabled()) {
-                for (String a : allowedOrigins) log.debug("   " + a);
-            }
+
+            log.debugf("Allowed origins in token: %s", allowedOrigins);
+
             if (allowedOrigins == null || (!allowedOrigins.contains("*") && !allowedOrigins.contains(origin))) {
                 if (allowedOrigins == null) {
                     log.debugv("allowedOrigins was null in token");
                 } else {
                     log.debugv("allowedOrigins did not contain origin");
-
                 }
                 facade.getResponse().sendError(403);
                 facade.getResponse().end();
@@ -124,6 +135,9 @@ public class AuthenticatedActionsHandler {
             facade.getResponse().setStatus(200);
             facade.getResponse().setHeader(CorsHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
             facade.getResponse().setHeader(CorsHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
+            if (exposeHeaders != null) {
+                facade.getResponse().setHeader(CorsHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, exposeHeaders);
+            }
         } else {
             log.debugv("cors validation not needed as we're not a secure session or origin header was null: {0}", facade.getRequest().getURI());
         }
@@ -142,9 +156,11 @@ public class AuthenticatedActionsHandler {
             AuthorizationContext authorizationContext = policyEnforcer.enforce(facade);
             RefreshableKeycloakSecurityContext session = (RefreshableKeycloakSecurityContext) facade.getSecurityContext();
 
-            session.setAuthorizationContext(authorizationContext);
+            if (session != null) {
+                session.setAuthorizationContext(authorizationContext);
+            }
 
-            return  authorizationContext.isGranted();
+            return authorizationContext.isGranted();
         } catch (Exception e) {
             throw new RuntimeException("Failed to enforce policy decisions.", e);
         }

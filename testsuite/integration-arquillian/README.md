@@ -4,6 +4,9 @@
 
 For overview see the **Modules Overview** section at the bottom of this README.
 
+## How to run tests
+
+See the file [HOW-TO-RUN.md](HOW-TO-RUN.md) .
 
 ## Container Lifecycles
 
@@ -26,7 +29,7 @@ Testsuite supports running server on Wildfly/EAP. For this it's necessary to:
 
 The cluster setup for server can be enabled by activating profile `auth-server-cluster`.
 
-The cluster setup is not supported for server on Undetow. Profile `auth-server-wildfly` or `auth-server-eap` needs to be activated.
+The cluster setup is not supported for server on Undertow. Profile `auth-server-wildfly` or `auth-server-eap` needs to be activated.
 
 The setup includes:
 - a `mod_cluster` load balancer on Wildfly
@@ -43,16 +46,14 @@ ifconfig lo multicast
 
 Lifecycle of application server is always tied to a particular TestClass.
 
-Each *adapter* test class is annotated by `@AppServerContainer("app-server-*")` annotation 
-that links it to a particular Arquillian container in `arquillian.xml`.
-The `AppServerTestEnricher` then ensures the server is started during `BeforeClass` event and stopped during `AfterClass` event for that particular test class. 
-In case the `@AppServerContainer` annotation has no value it's assumed that the application container 
-is the same as the auth server container - a "relative" adapter test scenario.
+Each *adapter* test class is annotated by one or more `@AppServerContainer("app-server-*")` annotations
+that links it to a particular Arquillian container.
+The `AppServerTestEnricher` then ensures the corresponding server is started during `BeforeClass` event and stopped during `AfterClass` event for that particular test class. 
 
-The app-servers with installed Keycloak adapter are prepared in `servers/app-server` submodules, activated by `-Papp-server-MODULE`.
+The app-servers with installed Keycloak adapter are prepared in `servers/app-server` submodules, activated by `-Papp-server-MODULE` or `-Dapp.server=MODULE`
 [More details.](servers/app-server/README.md)
 
-The corresponding adapter test modules are in `tests/other/adapters` submodules, and are activated by the same profiles.
+NOTE: Some corresponding adapter test modules are in `tests/other/adapters` submodules, and are activated by the same profiles. It will be tranferred into base testsuite.
 
 ## SuiteContext and TestContext
 
@@ -81,9 +82,12 @@ and the URL hierarchy is modeled by the class inheritance hierarchy (subclasses/
 
 ### Browsers
 
-The default browser for UI testing is `phantomjs` which is used for fast "headless" testing.
+The default browser for UI testing is `htmlunit` which is used for fast "headless" testing.
 Other browsers can be selected with the `-Dbrowser` property, for example `firefox`.
-See Arquillian Graphene documentation for more details.
+See [HOW-TO-RUN.md](HOW-TO-RUN.md) and Arquillian Drone documentation for more details.
+
+### Utils classes
+UI testing is sometimes very tricky due to different demands and behaviours of different browsers and their drivers. So there are some very useful Utils classes which are already dealing with some common stability issues while testing. See `UIUtils`, `URLUtils` and `WaitUtils` classes in the Base Testsuite.
 
 
 ## Test Modules
@@ -93,17 +97,19 @@ See Arquillian Graphene documentation for more details.
 The base testsuite contains custom Arquillian extensions and most functional tests.
 The other test modules depend on this module.
 
+### Base UI Testsuite
+Contains most of the UI-focused tests that don't cover Admin Console, i.e. all the parts of the server that are intended to be accessed by an end user.
+The tests placed here are exclusively covering the UI functionality of the server, i.e. checking if all the page elements are visible, links clickable etc., and are focused on simplicity and stability.
+This differs them from other integration tests and Admin Console UI tests.
+
+They are designed to work with most of the desktop browsers (HtmlUnit included) as well as mobile browsers (Chrome on Android and Safari on iOS). Please see [HOW-TO-RUN.md](HOW-TO-RUN.md) for details on supported browsers.
+
+The tests are place in a separate module (`tests/other/base-ui`) and are disabled by default.
+
 ### Admin Console UI Tests
 
 Tests for Keycloak Admin Console are located in a separate module `tests/other/console` 
 and are **disabled** by default. Can be enabled by `-Pconsole-ui-tests`.
-
-### Adapter Tests
-
-Adapter tests are located in submodules of the `tests/other/adapters` module.
-
-They are **disabled** by default; they can be enabled by corresponding profiles.
-Multiple profiles can be enabled for a single test execution.
 
 #### Types of adapter tests
 
@@ -119,13 +125,6 @@ It automatically modifies imported test realms and deployments' adapter configs 
 | --- | --- | --- | --- |
 | **Relative** | auth server == app server | client `baseUrl`, `adminUrl` and `redirect-uris` can be relative | `auth-server-url` can be relative |
 | **Non-relative** | auth server != app server  | client `baseUrl`, `adminUrl` and `redirect-uris` need to include FQDN of the app server | `auth-server-url` needs to include FQDN of the auth server|
-
-
-
-#### Adapter Libs Mode
-
-1. **Provided** - By container, e.g. as a subsystem. **Default.**
-2. **Bundled** - In the deployed war in `/WEB-INF/libs`. Enable with `-Dadapter.libs.bundled`. *Wildfly only*.
 
 #### Adapter Config Mode
 
@@ -174,9 +173,8 @@ integration-arquillian
    │
    └──other   (common settings for all test modules dependent on base)
       │
-      ├──adapters         (common settings for all adapter test modules)
+      ├──adapters         (common settings for all adapter test modules - will be moved into base)
       │  ├──jboss
-      │  ├──tomcat
       │  └──karaf
       │
       ├──console          

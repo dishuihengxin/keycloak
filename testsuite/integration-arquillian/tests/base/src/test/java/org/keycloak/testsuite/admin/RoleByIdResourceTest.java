@@ -21,6 +21,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.keycloak.admin.client.resource.RoleByIdResource;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.testsuite.Assert;
 import org.keycloak.testsuite.util.AdminEventPaths;
@@ -29,13 +30,18 @@ import org.keycloak.testsuite.util.RoleBuilder;
 
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.Response;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -54,6 +60,8 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
 
         Response response = adminClient.realm(REALM_NAME).clients().create(ClientBuilder.create().clientId("client-a").build());
         clientUuid = ApiUtil.getCreatedId(response);
+        getCleanup().addClientUuid(clientUuid);
+        response.close();
         adminClient.realm(REALM_NAME).clients().get(clientUuid).roles().create(RoleBuilder.create().name("role-c").description("Role C").build());
 
         for (RoleRepresentation r : adminClient.realm(REALM_NAME).roles().list()) {
@@ -63,6 +71,10 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
         for (RoleRepresentation r : adminClient.realm(REALM_NAME).clients().get(clientUuid).roles().list()) {
             ids.put(r.getName(), r.getId());
         }
+
+        getCleanup().addRoleId(ids.get("role-a"));
+        getCleanup().addRoleId(ids.get("role-b"));
+        getCleanup().addRoleId(ids.get("role-c"));
 
         resource = adminClient.realm(REALM_NAME).rolesById();
 
@@ -86,7 +98,7 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
         role.setDescription("Role A New");
 
         resource.updateRole(ids.get("role-a"), role);
-        assertAdminEvents.assertEvent(realmId, OperationType.UPDATE, AdminEventPaths.roleByIdResourcePath(ids.get("role-a")), role);
+        assertAdminEvents.assertEvent(realmId, OperationType.UPDATE, AdminEventPaths.roleByIdResourcePath(ids.get("role-a")), role, ResourceType.REALM_ROLE);
 
         role = resource.getRole(ids.get("role-a"));
 
@@ -100,7 +112,7 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
     public void deleteRole() {
         assertNotNull(resource.getRole(ids.get("role-a")));
         resource.deleteRole(ids.get("role-a"));
-        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.roleByIdResourcePath(ids.get("role-a")));
+        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.roleByIdResourcePath(ids.get("role-a")), ResourceType.REALM_ROLE);
 
         try {
             resource.getRole(ids.get("role-a"));
@@ -119,7 +131,7 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
         l.add(RoleBuilder.create().id(ids.get("role-c")).build());
         resource.addComposites(ids.get("role-a"), l);
 
-        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.roleByIdResourceCompositesPath(ids.get("role-a")), l);
+        assertAdminEvents.assertEvent(realmId, OperationType.CREATE, AdminEventPaths.roleByIdResourceCompositesPath(ids.get("role-a")), l, ResourceType.REALM_ROLE);
 
         Set<RoleRepresentation> composites = resource.getRoleComposites(ids.get("role-a"));
 
@@ -133,11 +145,50 @@ public class RoleByIdResourceTest extends AbstractAdminTest {
         Assert.assertNames(clientComposites, "role-c");
 
         resource.deleteComposites(ids.get("role-a"), l);
-        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.roleByIdResourceCompositesPath(ids.get("role-a")), l);
+        assertAdminEvents.assertEvent(realmId, OperationType.DELETE, AdminEventPaths.roleByIdResourceCompositesPath(ids.get("role-a")), l, ResourceType.REALM_ROLE);
 
         assertFalse(resource.getRole(ids.get("role-a")).isComposite());
         assertEquals(0, resource.getRoleComposites(ids.get("role-a")).size());
 
     }
 
+    @Test
+    public void attributes() {
+        for (String id : ids.values()) {
+            RoleRepresentation role = resource.getRole(id);
+            assertNotNull(role.getAttributes());
+            assertTrue(role.getAttributes().isEmpty());
+
+            // update the role with attributes
+            Map<String, List<String>> attributes = new HashMap<>();
+            List<String> attributeValues = new ArrayList<>();
+            attributeValues.add("value1");
+            attributes.put("key1", attributeValues);
+            attributeValues = new ArrayList<>();
+            attributeValues.add("value2.1");
+            attributeValues.add("value2.2");
+            attributes.put("key2", attributeValues);
+            role.setAttributes(attributes);
+
+            resource.updateRole(id, role);
+            role = resource.getRole(id);
+            assertNotNull(role);
+            Map<String, List<String>> roleAttributes = role.getAttributes();
+            assertNotNull(roleAttributes);
+
+            Assert.assertRoleAttributes(attributes, roleAttributes);
+
+
+            // delete an attribute
+            attributes.remove("key2");
+            role.setAttributes(attributes);
+            resource.updateRole(id, role);
+            role = resource.getRole(id);
+            assertNotNull(role);
+            roleAttributes = role.getAttributes();
+            assertNotNull(roleAttributes);
+
+            Assert.assertRoleAttributes(attributes, roleAttributes);
+        }
+    }
 }

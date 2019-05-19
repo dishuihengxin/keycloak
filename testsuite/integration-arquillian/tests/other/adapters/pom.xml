@@ -24,7 +24,7 @@
     <parent>
         <groupId>org.keycloak.testsuite</groupId>
         <artifactId>integration-arquillian-tests-other</artifactId>
-        <version>2.0.0.CR1-SNAPSHOT</version>
+        <version>7.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>integration-arquillian-tests-adapters</artifactId>
@@ -32,17 +32,18 @@
     <packaging>pom</packaging>
 
     <name>Adapter Tests</name>
-    
+
     <properties>
-        
+
         <app.server.arquillian.xsl>${common.resources}/xslt/arquillian.xsl</app.server.arquillian.xsl>
-        
+
         <app.server.artifactId>integration-arquillian-servers-app-server-${app.server}</app.server.artifactId>
         <app.server.skip.unpack>false</app.server.skip.unpack>
-        
+
         <app.server.mode>manual</app.server.mode>
-        
+
         <app.server.host>localhost</app.server.host>
+        <app.server.browserHost/> <!-- if set, this host will be used by the browser instead of app.server.host -->
         <app.server.port.offset>200</app.server.port.offset>
         <app.server.http.port>8280</app.server.http.port>
         <app.server.https.port>8643</app.server.https.port>
@@ -50,10 +51,30 @@
         <app.server.management.port>10190</app.server.management.port>
         <app.server.management.port.jmx>10199</app.server.management.port.jmx>
         <app.server.startup.timeout>60</app.server.startup.timeout>
-        <app.server.memory.settings>-Xms64m -Xmx512m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m</app.server.memory.settings>
+        <!-- Cluster tests are failing with -Xmx512 for insufficient physical memory -->
+        <app.server.memory.settings>-Xms64m -Xmx384m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m</app.server.memory.settings>
+
+        <!--debug properties-->
+        <app.server.debug.port>5006</app.server.debug.port>
+        <app.server.debug.suspend>n</app.server.debug.suspend>
+        <app.server.jboss.jvm.debug.args>-agentlib:jdwp=transport=dt_socket,server=y,suspend=${app.server.debug.suspend},address=${app.server.host}:${app.server.debug.port}</app.server.jboss.jvm.debug.args>
         
         <app.server.ssl.required>false</app.server.ssl.required>
-        
+
+        <app.server.reverse-proxy.port.offset>500</app.server.reverse-proxy.port.offset>
+        <app.server.1.port.offset>300</app.server.1.port.offset>
+        <app.server.1.management.port>10290</app.server.1.management.port>
+        <app.server.1.management.port.jmx>10299</app.server.1.management.port.jmx>
+        <app.server.2.port.offset>400</app.server.2.port.offset>
+        <app.server.2.management.port>10390</app.server.2.management.port>
+        <app.server.2.management.port.jmx>10399</app.server.2.management.port.jmx>
+
+        <settings.path></settings.path>
+        <maven.repo.local></maven.repo.local>
+        <repo.url></repo.url>
+        <wl.password></wl.password>
+        <wl.home></wl.home>
+
         <adapter.test.props>
             -Dapp.server.base.url=http://localhost:${app.server.http.port}
             -Dauth.server.base.url=http://localhost:${auth.server.http.port}
@@ -63,20 +84,26 @@
             -Dauth.server.ssl.required=${auth.server.ssl.required}
             -Dmy.host.name=localhost
             -Djava.security.krb5.conf=${project.build.directory}/dependency/kerberos/test-krb5.conf
+            -Dkie.maven.settings.custom=${settings.path}
+            -Dkie.maven.repo.local=${maven.repo.local}
+            -Drepo.url=${repo.url}
+            -Dwl.password=${wl.password}
+            -Dwl.home=${wl.home}
         </adapter.test.props>
-        
+
         <app.server.home>${containers.home}/app-server-${app.server}</app.server.home>
-        <adapter.libs.mode>bundled</adapter.libs.mode>
-        <adapter.config.mode>bundled</adapter.config.mode>
-        
+        <adapter.config.bundled>true</adapter.config.bundled>
+        <examples.basedir>${keycloak-parent.basedir}/examples</examples.basedir>
+        <exclude.test>-</exclude.test>
     </properties>
-        
+
     <modules>
         <module>jboss</module>
         <module>karaf</module>
-        <module>tomcat</module>
+        <module>was</module>
+        <module>wls</module>
     </modules>
-    
+
     <profiles>
 
         <profile>
@@ -88,6 +115,26 @@
             </activation>
             <build>
                 <plugins>
+                    <plugin>
+                        <groupId>org.commonjava.maven.plugins</groupId>
+                        <artifactId>directory-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>keycloak-parent-basedir</id>
+                                <goals>
+                                    <goal>directory-of</goal>
+                                </goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <property>keycloak-parent.basedir</property>
+                                    <project>
+                                        <groupId>org.keycloak</groupId>
+                                        <artifactId>keycloak-parent</artifactId>
+                                    </project>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>xml-maven-plugin</artifactId>
@@ -132,7 +179,7 @@
                                     <artifactItems>
                                         <artifactItem>
                                             <groupId>org.keycloak.testsuite</groupId>
-                                            <artifactId>${app.server.artifactId}</artifactId>        
+                                            <artifactId>${app.server.artifactId}</artifactId>
                                             <version>${project.version}</version>
                                             <type>zip</type>
                                         </artifactItem>
@@ -150,10 +197,11 @@
                                 <app.server>${app.server}</app.server>
                                 <app.server.home>${app.server.home}</app.server.home>
                                 <app.server.java.home>${app.server.java.home}</app.server.java.home>
-                            
+
                                 <app.server.mode>${app.server.mode}</app.server.mode>
-                            
+
                                 <app.server.host>${app.server.host}</app.server.host>
+                                <app.server.browserHost>${app.server.browserHost}</app.server.browserHost> <!-- if set, this host will be used by the browser -->
                                 <app.server.port.offset>${app.server.port.offset}</app.server.port.offset>
                                 <app.server.http.port>${app.server.http.port}</app.server.http.port>
                                 <app.server.https.port>${app.server.https.port}</app.server.https.port>
@@ -163,34 +211,41 @@
                                 <app.server.management.port>${app.server.management.port}</app.server.management.port>
                                 <app.server.management.port.jmx>${app.server.management.port.jmx}</app.server.management.port.jmx>
                                 <app.server.ssl.required>${app.server.ssl.required}</app.server.ssl.required>
-                                
+
                                 <app.server.startup.timeout>${app.server.startup.timeout}</app.server.startup.timeout>
                                 <app.server.memory.settings>${app.server.memory.settings}</app.server.memory.settings>
+                                <app.server.jboss.jvm.debug.args>${app.server.jboss.jvm.debug.args}</app.server.jboss.jvm.debug.args>
+                                <app.server.karaf.jvm.debug.args>${app.server.karaf.jvm.debug.args}</app.server.karaf.jvm.debug.args>
+                                
+                                <app.server.reverse-proxy.port.offset>${app.server.reverse-proxy.port.offset}</app.server.reverse-proxy.port.offset>
+
+                                <app.server.1.port.offset>${app.server.1.port.offset}</app.server.1.port.offset>
+                                <app.server.1.management.port>${app.server.1.management.port}</app.server.1.management.port>
+
+                                <app.server.2.port.offset>${app.server.2.port.offset}</app.server.2.port.offset>
+                                <app.server.2.management.port>${app.server.2.management.port}</app.server.2.management.port>
 
                                 <adapter.test.props>${adapter.test.props}</adapter.test.props>
 
-                                <adapter.libs.home>${adapter.libs.home}</adapter.libs.home>
-                                <adapter.libs.mode>${adapter.libs.mode}</adapter.libs.mode>
-                                <adapter.config.mode>${adapter.config.mode}</adapter.config.mode>
+                                <adapter.config.bundled>${adapter.config.bundled}</adapter.config.bundled>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>
+<!--                    <plugin>
+                        <groupId>org.jboss.shrinkwrap.resolver</groupId>
+                        <artifactId>shrinkwrap-resolver-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>propagate-execution-context</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>-->
                 </plugins>
             </build>
         </profile>
-        
-        <profile>
-            <id>adapter-libs-provided</id>
-            <activation>    
-                <property>
-                    <name>!adapter.libs.bundled</name>
-                </property>
-            </activation>
-            <properties>
-                <adapter.libs.mode>provided</adapter.libs.mode>
-            </properties>
-        </profile>
-        
+
         <profile>
             <id>examples</id>
             <activation>
@@ -213,74 +268,44 @@
                                     <configuration>
                                         <artifactItems>
                                             <artifactItem>
-                                                <groupId>org.keycloak.example.demo</groupId>
-                                                <artifactId>product-portal-example</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>war</type>
-                                            </artifactItem>
-                                            <artifactItem>
-                                                <groupId>org.keycloak.example.demo</groupId>
-                                                <artifactId>customer-portal-example</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>war</type>
-                                            </artifactItem>
-                                            <artifactItem>
-                                                <groupId>org.keycloak.example.demo</groupId>
-                                                <artifactId>database-service</artifactId>
+                                                <groupId>org.keycloak.testsuite</groupId>
+                                                <artifactId>hello-world-authz-service</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
                                                 <groupId>org.keycloak.testsuite</groupId>
-                                                <artifactId>integration-arquillian-test-apps-js-console</artifactId>
+                                                <artifactId>photoz-html5-client</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
                                                 <groupId>org.keycloak.testsuite</groupId>
-                                                <artifactId>integration-arquillian-test-apps-js-database</artifactId>
+                                                <artifactId>photoz-restful-api</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>examples-multitenant</artifactId>
+                                                <groupId>org.keycloak.testsuite</groupId>
+                                                <artifactId>servlet-authz-app</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>examples-basicauth</artifactId>
+                                                <groupId>org.keycloak.testsuite</groupId>
+                                                <artifactId>servlet-policy-enforcer</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
-                                                <groupId>org.keycloak.example.demo</groupId>
-                                                <artifactId>cors-angular-product-example</artifactId>
+                                                <groupId>org.keycloak.testsuite</groupId>
+                                                <artifactId>integration-arquillian-test-apps-cors-angular-product</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
                                             <artifactItem>
-                                                <groupId>org.keycloak.example.demo</groupId>
-                                                <artifactId>cors-database-service</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>war</type>
-                                            </artifactItem>
-                                            <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>sales-post-sig</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>war</type>
-                                            </artifactItem>
-                                            <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>saml-post-encryption</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>war</type>
-                                            </artifactItem>
-                                            <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>saml-redirect-signatures</artifactId>
+                                                <groupId>org.keycloak.testsuite</groupId>
+                                                <artifactId>integration-arquillian-test-apps-cors-database-service</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>war</type>
                                             </artifactItem>
@@ -288,9 +313,9 @@
                                         <outputDirectory>${examples.home}</outputDirectory>
                                         <overWriteIfNewer>true</overWriteIfNewer>
                                     </configuration>
-                                </execution>                            
+                                </execution>
                                 <execution>
-                                    <id>example-realms</id>
+                                    <id>test-apps-realms</id>
                                     <phase>generate-test-resources</phase>
                                     <goals>
                                         <goal>unpack</goal>
@@ -298,29 +323,28 @@
                                     <configuration>
                                         <artifactItems>
                                             <artifactItem>
-                                                <groupId>org.keycloak</groupId>
-                                                <artifactId>keycloak-examples-dist</artifactId>
-                                                <version>${project.version}</version>
-                                                <type>zip</type>
-                                                <includes>**/*realm.json,**/testsaml.json</includes>
-                                            </artifactItem>
-                                            <artifactItem>
                                                 <groupId>org.keycloak.testsuite</groupId>
                                                 <artifactId>integration-arquillian-test-apps-dist</artifactId>
                                                 <version>${project.version}</version>
                                                 <type>zip</type>
-                                                <includes>**/*realm.json,**/testsaml.json</includes>
+                                                <includes>**/*realm.json,**/*authz-service.json,**/testsaml.json,**/*-keycloak.json</includes>
                                             </artifactItem>
                                         </artifactItems>
                                         <outputDirectory>${examples.home}</outputDirectory>
                                         <overWriteIfNewer>true</overWriteIfNewer>
                                     </configuration>
-                                </execution>                            
+                                </execution>
                             </executions>
-                        </plugin>            
+                        </plugin>
                         <plugin>
                             <artifactId>maven-surefire-plugin</artifactId>
                             <configuration>
+                                <excludes>
+                                    <exclude>${exclude.test}</exclude>
+                                </excludes>
+                                <excludes>
+                                    <exclude>${exclude.cors.tests}</exclude>
+                                </excludes>
                                 <systemPropertyVariables>
                                     <examples.home>${examples.home}</examples.home>
                                     <examples.version.suffix>${project.version}</examples.version.suffix>
@@ -346,13 +370,33 @@
                                         </resources>
                                     </configuration>
                                 </execution>
+                                <execution>
+                                    <id>example-realms</id>
+                                    <phase>generate-test-resources</phase>
+                                    <goals>
+                                        <goal>copy-resources</goal>
+                                    </goals>
+                                    <configuration>
+                                        <outputDirectory>${examples.home}/example-realms</outputDirectory>
+                                        <overWriteIfNewer>true</overWriteIfNewer>
+                                        <resources>
+                                            <resource>
+                                                <directory>${examples.basedir}</directory>
+                                                <filtering>true</filtering>
+                                                <includes>
+                                                    <include>**/*realm.json</include>
+                                                    <include>**/testsaml.json</include>
+                                                </includes>
+                                            </resource>
+                                        </resources>
+                                    </configuration>
+                                </execution>
                             </executions>
                         </plugin>
                     </plugins>
                 </pluginManagement>
             </build>
         </profile>
-        
     </profiles>
 
 </project>

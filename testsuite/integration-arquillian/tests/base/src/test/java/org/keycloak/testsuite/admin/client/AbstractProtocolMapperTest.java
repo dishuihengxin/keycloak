@@ -17,20 +17,21 @@
 
 package org.keycloak.testsuite.admin.client;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import org.keycloak.admin.client.resource.ProtocolMappersResource;
+import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
+import org.keycloak.representations.idm.AdminEventRepresentation;
+import org.keycloak.representations.idm.ProtocolMapperRepresentation;
+import org.keycloak.testsuite.Assert;
+import org.keycloak.util.JsonSerialization;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import org.keycloak.admin.client.resource.ProtocolMappersResource;
-import org.keycloak.events.admin.OperationType;
-import org.keycloak.representations.idm.AdminEventRepresentation;
-import org.keycloak.representations.idm.ProtocolMapperRepresentation;
-import org.keycloak.testsuite.Assert;
-import org.keycloak.util.JsonSerialization;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -54,8 +55,6 @@ public abstract class AbstractProtocolMapperTest extends AbstractClientTest {
         rep.setName(name);
         rep.setProtocolMapper(mapperType);
         rep.setConfig(config);
-        rep.setConsentRequired(true);
-        rep.setConsentText("Test Consent Text");
         return rep;
     }
 
@@ -76,8 +75,6 @@ public abstract class AbstractProtocolMapperTest extends AbstractClientTest {
         assertNotNull(created);
         assertEquals(original.getName(), created.getName());
         assertEquals(original.getConfig(), created.getConfig());
-        assertEquals(original.getConsentText(), created.getConsentText());
-        assertEquals(original.isConsentRequired(), created.isConsentRequired());
         assertEquals(original.getProtocol(), created.getProtocol());
         assertEquals(original.getProtocolMapper(), created.getProtocolMapper());
     }
@@ -109,7 +106,7 @@ public abstract class AbstractProtocolMapperTest extends AbstractClientTest {
         // This is used by admin console to add builtin mappers
         resource.createMapper(mappersToAdd);
 
-        AdminEventRepresentation adminEvent = assertAdminEvents.assertEvent(getRealmId(), OperationType.CREATE, adminEventPath + "/add-models");
+        AdminEventRepresentation adminEvent = assertAdminEvents.assertEvent(getRealmId(), OperationType.CREATE, adminEventPath + "/add-models", ResourceType.PROTOCOL_MAPPER);
         try {
             List<ProtocolMapperRepresentation> eventMappers = JsonSerialization.readValue(new ByteArrayInputStream(adminEvent.getRepresentation().getBytes()), new TypeReference<List<ProtocolMapperRepresentation>>() {
             });

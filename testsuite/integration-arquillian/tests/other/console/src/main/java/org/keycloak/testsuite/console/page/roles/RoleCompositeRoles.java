@@ -1,24 +1,25 @@
 package org.keycloak.testsuite.console.page.roles;
 
+import org.keycloak.representations.idm.RoleRepresentation.Composites;
+import org.keycloak.testsuite.page.Form;
+import org.keycloak.testsuite.util.UIUtils;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.ui.Select;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.keycloak.representations.idm.RoleRepresentation.Composites;
-import org.keycloak.testsuite.page.Form;
-import static org.keycloak.testsuite.util.WaitUtils.pause;
+
+import static org.keycloak.testsuite.util.UIUtils.clickLink;
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.logging.LogEntries;
-import org.openqa.selenium.logging.LogEntry;
-import org.openqa.selenium.support.FindBy;
-import org.openqa.selenium.support.ui.Select;
 
 /**
  *
@@ -90,7 +91,7 @@ public class RoleCompositeRoles extends Form {
                 select.selectByVisibleText(role);
             }
         }
-        button.click();
+        clickLink(button);
     }
 
     public void addRealmRole(String role) {
@@ -110,14 +111,14 @@ public class RoleCompositeRoles extends Form {
                 }
             }
             waitUntilElement(button).is().enabled();
-            button.click();
+            clickLink(button);
         }
     }
 
     public static Set<String> getSelectValues(Select select) {
         Set<String> roles = new HashSet<>();
         for (WebElement option : select.getOptions()) {
-            roles.add(option.getText());
+            roles.add(getTextFromElement(option));
         }
         return roles;
     }
@@ -144,34 +145,24 @@ public class RoleCompositeRoles extends Form {
         waitUntilElement(By.id("available")).is().present();
         for (String role : roles) {
             availableRealmRolesSelect.selectByVisibleText(role);
-            addSelectedRealmRolesButton.click();
+            clickLink(addSelectedRealmRolesButton);
         }
     }
 
     public void removeAssignedRole(String role) {
         waitUntilElement(By.id("assigned")).is().present();
         assignedRealmRolesSelect.selectByVisibleText(role);
-        removeSelectedRealmRolesButton.click();
+        clickLink(removeSelectedRealmRolesButton);
     }
 
     public boolean isAssignedRole(String role) {
         waitUntilElement(By.id("assigned")).is().present();
-        try {
-            assignedRealmRolesSelect.selectByVisibleText(role);
-        } catch (Exception ex) {
-            return false;
-        }
-        return true;
+        return UIUtils.selectContainsOption(assignedRealmRolesSelect, role);
     }
 
     public boolean isAssignedClientRole(String role) {
         waitUntilElement(By.id("assigned")).is().present();
-        try {
-            assignedClientRolesSelect.selectByVisibleText(role);
-        } catch (Exception ex) {
-            return false;
-        }
-        return true;
+        return UIUtils.selectContainsOption(assignedClientRolesSelect, role);
     }
 
     public void selectClientRole(String client) {
@@ -183,14 +174,14 @@ public class RoleCompositeRoles extends Form {
         waitUntilElement(By.id("available-client")).is().present();
         for (String role : roles) {
             availableClientRolesSelect.selectByVisibleText(role);
-            addSelectedClientRolesButton.click();
+            clickLink(addSelectedClientRolesButton);
         }
     }
 
     public void removeAssignedClientRole(String client) {
         waitUntilElement(By.id("assigned-client")).is().present();
         assignedClientRolesSelect.selectByVisibleText(client);
-        removeSelectedClientRolesButton.click();
+        clickLink(removeSelectedClientRolesButton);
     }
 
 }

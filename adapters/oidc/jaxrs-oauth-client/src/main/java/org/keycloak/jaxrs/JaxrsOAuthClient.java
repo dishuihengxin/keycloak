@@ -20,6 +20,7 @@ package org.keycloak.jaxrs;
 import org.keycloak.AbstractOAuthClient;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.representations.AccessTokenResponse;
+import org.keycloak.util.TokenUtil;
 
 import javax.ws.rs.BadRequestException;
 import javax.ws.rs.InternalServerErrorException;
@@ -41,7 +42,11 @@ import java.util.logging.Logger;
  *
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
+ * @deprecated Class is deprecated and may be removed in the future. If you want to maintain this class for Keycloak community, please
+ * contact Keycloak team on keycloak-dev mailing list. You can fork it into your github repository and
+ * Keycloak team will reference it from "Keycloak Extensions" page.
  */
+@Deprecated
 public class JaxrsOAuthClient extends AbstractOAuthClient {
     private final static Logger logger = Logger.getLogger("" + JaxrsOAuthClient.class);
     protected Client client;
@@ -85,14 +90,13 @@ public class JaxrsOAuthClient extends AbstractOAuthClient {
     }
     public Response redirect(UriInfo uriInfo, String redirectUri) {
         String state = getStateCode();
+        String scopeParam = TokenUtil.attachOIDCScope(scope);
 
         UriBuilder uriBuilder = UriBuilder.fromUri(authUrl)
                 .queryParam(OAuth2Constants.CLIENT_ID, clientId)
                 .queryParam(OAuth2Constants.REDIRECT_URI, redirectUri)
-                .queryParam(OAuth2Constants.STATE, state);
-        if (scope != null) {
-            uriBuilder.queryParam(OAuth2Constants.SCOPE, scope);
-        }
+                .queryParam(OAuth2Constants.STATE, state)
+                .queryParam(OAuth2Constants.SCOPE, scopeParam);
 
         URI url = uriBuilder.build();
 

@@ -21,19 +21,20 @@
  */
 package org.keycloak.testsuite.console.clients;
 
-import java.util.Map;
 import org.jboss.arquillian.graphene.page.Page;
-import org.junit.Test;
-
-import static org.junit.Assert.*;
 import org.junit.Before;
+import org.junit.Test;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.ProtocolMapperRepresentation;
-import static org.keycloak.testsuite.auth.page.login.Login.SAML;
-import static org.keycloak.testsuite.console.clients.AbstractClientTest.createClientRep;
 import org.keycloak.testsuite.console.page.clients.mappers.ClientMapper;
 import org.keycloak.testsuite.console.page.clients.mappers.ClientMappers;
 import org.keycloak.testsuite.console.page.clients.mappers.CreateClientMappers;
+
+import java.util.Map;
+
+import static org.junit.Assert.*;
+import static org.keycloak.testsuite.auth.page.login.Login.SAML;
+import static org.keycloak.testsuite.console.clients.AbstractClientTest.createClientRep;
 import static org.keycloak.testsuite.console.page.clients.mappers.CreateClientMappersForm.*;
 
 /**
@@ -62,19 +63,15 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
         clientMappersPage.navigateTo();
     }
     
-    private void setInitialValues(String name, boolean consentRequired, String consentText) {
+    private void setInitialValues(String name) {
         createClientMappersPage.form().setName(name);
-        createClientMappersPage.form().setConsentRequired(consentRequired);
-        if (consentRequired) {
-            createClientMappersPage.form().setConsentText(consentText);
-        }
     }
     
     @Test
     public void testRoleName() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("role name", false, null);
+        setInitialValues("role name");
         createClientMappersPage.form().setMapperType(ROLE_NAME_MAPPER);
         createClientMappersPage.form().setRole("offline_access");
         createClientMappersPage.form().setNewRole("new role");
@@ -94,7 +91,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testRoleList() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("new role list", false, null);
+        setInitialValues("new role list");
         createClientMappersPage.form().setMapperType(ROLE_LIST);
         createClientMappersPage.form().setRoleAttributeName("role attribute name");
         createClientMappersPage.form().setFriendlyName("friendly name");
@@ -106,8 +103,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
         //check
         ProtocolMapperRepresentation found = findClientMapperByName(id, "new role list");
         assertNotNull(found);
-        
-        assertFalse(found.isConsentRequired());
+
         assertEquals("saml-role-list-mapper", found.getProtocolMapper());
         
         Map<String, String> config = found.getConfig();
@@ -121,7 +117,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testUserProperty() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("user property", false, null);
+        setInitialValues("user property");
         createClientMappersPage.form().setMapperType(USER_PROPERTY);
         createClientMappersPage.form().save();
         assertAlertSuccess();
@@ -135,7 +131,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testUserSessionNote() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("user session note", false, null);
+        setInitialValues("user session note");
         createClientMappersPage.form().setMapperType(USER_SESSION_NOTE);
         createClientMappersPage.form().save();
         assertAlertSuccess();
@@ -143,8 +139,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
         //check
         ProtocolMapperRepresentation found = findClientMapperByName(id, "user session note");
         assertNotNull(found);
-        
-        assertFalse(found.isConsentRequired());
+
         assertEquals("saml-user-session-note-mapper", found.getProtocolMapper());
     }
 
@@ -152,7 +147,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testHardcodedAttribute() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("hardcoded attribute", false, null);
+        setInitialValues("hardcoded attribute");
         createClientMappersPage.form().setMapperType(HARDCODED_ATTRIBUTE);
         createClientMappersPage.form().setAttributeValue("attribute value");
         createClientMappersPage.form().save();
@@ -161,8 +156,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
         //check
         ProtocolMapperRepresentation found = findClientMapperByName(id, "hardcoded attribute");
         assertNotNull(found);
-        
-        assertFalse(found.isConsentRequired());
+
         assertEquals("saml-hardcode-attribute-mapper", found.getProtocolMapper());
         
         Map<String, String> config = found.getConfig();
@@ -173,7 +167,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testGroupList() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("group list", false, null);
+        setInitialValues("group list");
         createClientMappersPage.form().setMapperType(GROUP_LIST);
         createClientMappersPage.form().setGroupAttributeName("group attribute name");
         createClientMappersPage.form().setSingleGroupAttribute(true);
@@ -195,7 +189,7 @@ public class ClientMappersSAMLTest extends AbstractClientTest {
     public void testHardcodedRole() {
         //create
         clientMappersPage.mapperTable().createMapper();
-        setInitialValues("hardcoded role", false, null);
+        setInitialValues("hardcoded role");
         createClientMappersPage.form().setMapperType(HARDCODED_ROLE_SAML);
         createClientMappersPage.form().selectRole(REALM_ROLE, "offline_access", null);
         createClientMappersPage.form().save();

@@ -17,17 +17,19 @@
  */
 package org.keycloak.testsuite.console.page.idp;
 
-import java.util.ArrayList;
-import java.util.List;
 import org.jboss.arquillian.graphene.findby.FindByJQuery;
-import org.keycloak.admin.client.resource.IdentityProvidersResource;
+import org.keycloak.testsuite.console.page.AdminConsoleRealm;
 import org.keycloak.testsuite.model.Provider;
 import org.keycloak.testsuite.model.SocialProvider;
-import org.keycloak.testsuite.console.page.AdminConsoleRealm;
-import static org.openqa.selenium.By.tagName;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
+import static org.openqa.selenium.By.tagName;
 
 /**
  *
@@ -82,10 +84,10 @@ public class IdentityProviderSettings extends AdminConsoleRealm {
         for (WebElement rowElement : providersTable.findElements(tagName("tr"))) {
             Provider provider = new Provider();
             List<WebElement> tds = rowElement.findElements(tagName("td"));
-            if (!(tds.isEmpty() || tds.get(0).getText().isEmpty())) {
-                provider.providerName = SocialProvider.valueOf(tds.get(0).getText());
-                provider.key = tds.get(1).getText();
-                provider.secret = tds.get(2).getText();
+            if (!(tds.isEmpty() || getTextFromElement(tds.get(0)).isEmpty())) {
+                provider.providerName = SocialProvider.valueOf(getTextFromElement(tds.get(0)));
+                provider.key = getTextFromElement(tds.get(1));
+                provider.secret = getTextFromElement(tds.get(2));
                 rows.add(provider);
             }
         }

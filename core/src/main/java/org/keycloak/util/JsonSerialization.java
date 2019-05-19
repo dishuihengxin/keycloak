@@ -41,7 +41,9 @@ public class JsonSerialization {
     public static final ObjectMapper sysPropertiesAwareMapper = new ObjectMapper(new SystemPropertiesJsonParserFactory());
 
     static {
+        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
         mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        prettyMapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
         prettyMapper.enable(SerializationFeature.INDENT_OUTPUT);
         prettyMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
@@ -75,6 +77,10 @@ public class JsonSerialization {
 
     public static <T> T readValue(InputStream bytes, Class<T> type) throws IOException {
         return readValue(bytes, type, false);
+    }
+
+    public static <T> T readValue(String string, TypeReference<T> type) throws IOException {
+        return mapper.readValue(string, type);
     }
 
     public static <T> T readValue(InputStream bytes, TypeReference<T> type) throws IOException {

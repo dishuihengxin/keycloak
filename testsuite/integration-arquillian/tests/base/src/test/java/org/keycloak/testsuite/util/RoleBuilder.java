@@ -17,12 +17,13 @@
 
 package org.keycloak.testsuite.util;
 
+import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation.Composites;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import org.keycloak.representations.idm.RoleRepresentation;
-import org.keycloak.representations.idm.RoleRepresentation.Composites;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -50,11 +51,6 @@ public class RoleBuilder {
 
     public RoleBuilder description(String description) {
         rep.setDescription(description);
-        return this;
-    }
-
-    public RoleBuilder scopeParamRequired(Boolean required) {
-        rep.setScopeParamRequired(required);
         return this;
     }
 

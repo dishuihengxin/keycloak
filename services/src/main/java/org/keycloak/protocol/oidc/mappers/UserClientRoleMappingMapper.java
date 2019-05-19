@@ -17,18 +17,19 @@
 
 package org.keycloak.protocol.oidc.mappers;
 
-import org.keycloak.models.ClientModel;
+import org.keycloak.models.ClientSessionContext;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.ProtocolMapperUtils;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.IDToken;
+import org.keycloak.utils.RoleResolveUtil;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Allows mapping of user client role mappings to an ID and Access Token claim.
@@ -39,7 +40,9 @@ public class UserClientRoleMappingMapper extends AbstractUserRoleMappingMapper {
 
     public static final String PROVIDER_ID = "oidc-usermodel-client-role-mapper";
 
-    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<ProviderConfigProperty>();
+    private static final String TOKEN_CLAIM_NAME_TOOLTIP = "usermodel.clientRoleMapping.tokenClaimName.tooltip";
+
+    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
     static {
 
@@ -47,7 +50,7 @@ public class UserClientRoleMappingMapper extends AbstractUserRoleMappingMapper {
         clientId.setName(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID);
         clientId.setLabel(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID_LABEL);
         clientId.setHelpText(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID_HELP_TEXT);
-        clientId.setType(ProviderConfigProperty.STRING_TYPE);
+        clientId.setType(ProviderConfigProperty.CLIENT_LIST_TYPE);
         CONFIG_PROPERTIES.add(clientId);
 
         ProviderConfigProperty clientRolePrefix = new ProviderConfigProperty();
@@ -57,9 +60,25 @@ public class UserClientRoleMappingMapper extends AbstractUserRoleMappingMapper {
         clientRolePrefix.setType(ProviderConfigProperty.STRING_TYPE);
         CONFIG_PROPERTIES.add(clientRolePrefix);
 
-        OIDCAttributeMapperHelper.addAttributeConfig(CONFIG_PROPERTIES);
+        ProviderConfigProperty multiValued = new ProviderConfigProperty();
+        multiValued.setName(ProtocolMapperUtils.MULTIVALUED);
+        multiValued.setLabel(ProtocolMapperUtils.MULTIVALUED_LABEL);
+        multiValued.setHelpText(ProtocolMapperUtils.MULTIVALUED_HELP_TEXT);
+        multiValued.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        multiValued.setDefaultValue("true");
+        CONFIG_PROPERTIES.add(multiValued);
+
+        OIDCAttributeMapperHelper.addAttributeConfig(CONFIG_PROPERTIES, UserClientRoleMappingMapper.class);
+
+        // Alternative tooltip for the 'Token Claim Name'
+        for (ProviderConfigProperty prop : CONFIG_PROPERTIES) {
+            if (OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME.equals(prop.getName())) {
+                prop.setHelpText(TOKEN_CLAIM_NAME_TOOLTIP);
+            }
+        }
     }
 
+    @Override
     public List<ProviderConfigProperty> getConfigProperties() {
         return CONFIG_PROPERTIES;
     }
@@ -84,20 +103,56 @@ public class UserClientRoleMappingMapper extends AbstractUserRoleMappingMapper {
         return "Map a user client role to a token claim.";
     }
 
-    protected void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession) {
-
-        UserModel user = userSession.getUser();
-
+    @Override
+    protected void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession, KeycloakSession session, ClientSessionContext clientSessionCtx) {
         String clientId = mappingModel.getConfig().get(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID);
-        if (clientId != null) {
+        String rolePrefix = mappingModel.getConfig().get(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX);
 
-            ClientModel clientModel = userSession.getRealm().getClientByClientId(clientId.trim());
-            Set<RoleModel> clientRoleMappings = user.getClientRoleMappings(clientModel);
+        if (clientId != null && !clientId.isEmpty()) {
+            AccessToken.Access access = RoleResolveUtil.getResolvedClientRoles(session, clientSessionCtx, clientId, false);
+            if (access == null) {
+                return;
+            }
 
-            String rolePrefix = mappingModel.getConfig().get(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX);
-            Set<String> clientRoleNames = flattenRoleModelToRoleNames(clientRoleMappings, rolePrefix);
+            AbstractUserRoleMappingMapper.setClaim(token, mappingModel, access.getRoles(), clientId, rolePrefix);
+        } else {
+            // If clientId is not specified, we consider all clients
+            Map<String, AccessToken.Access> allAccess = RoleResolveUtil.getAllResolvedClientRoles(session, clientSessionCtx);
 
-            OIDCAttributeMapperHelper.mapClaim(token, mappingModel, clientRoleNames);
+            for (Map.Entry<String, AccessToken.Access> entry : allAccess.entrySet()) {
+                String currClientId = entry.getKey();
+                AccessToken.Access access = entry.getValue();
+                if (access == null) {
+                    continue;
+                }
+
+                AbstractUserRoleMappingMapper.setClaim(token, mappingModel, access.getRoles(), currClientId, rolePrefix);
+            }
         }
     }
+
+
+    public static ProtocolMapperModel create(String clientId, String clientRolePrefix,
+                                             String name,
+                                             String tokenClaimName,
+                                             boolean accessToken, boolean idToken) {
+        return create(clientId, clientRolePrefix, name, tokenClaimName, accessToken, idToken, false);
+
+    }
+
+    public static ProtocolMapperModel create(String clientId, String clientRolePrefix,
+                                             String name,
+                                             String tokenClaimName,
+                                             boolean accessToken, boolean idToken, boolean multiValued) {
+        ProtocolMapperModel mapper = OIDCAttributeMapperHelper.createClaimMapper(name, "foo",
+                tokenClaimName, "String",
+                accessToken, idToken, false,
+                PROVIDER_ID);
+
+        mapper.getConfig().put(ProtocolMapperUtils.MULTIVALUED, String.valueOf(multiValued));
+        mapper.getConfig().put(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID, clientId);
+        mapper.getConfig().put(ProtocolMapperUtils.USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX, clientRolePrefix);
+        return mapper;
+    }
+
 }

@@ -17,19 +17,18 @@
 
 package org.keycloak.adapters;
 
-import java.io.IOException;
-
 import org.jboss.logging.Logger;
 import org.keycloak.KeycloakPrincipal;
-import org.keycloak.RSATokenVerifier;
+import org.keycloak.TokenVerifier;
+import org.keycloak.adapters.rotation.AdapterTokenVerifier;
 import org.keycloak.adapters.spi.HttpFacade;
 import org.keycloak.common.VerificationException;
+import org.keycloak.common.util.KeycloakUriBuilder;
 import org.keycloak.constants.AdapterConstants;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.jose.jws.JWSInputException;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.IDToken;
-import org.keycloak.common.util.KeycloakUriBuilder;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -48,7 +47,7 @@ public class CookieTokenStore {
                 .append(idToken).append(DELIM)
                 .append(refreshToken).toString();
 
-        String cookiePath = getContextPath(facade);
+        String cookiePath = getCookiePath(deployment, facade);
         facade.getResponse().setCookie(AdapterConstants.KEYCLOAK_ADAPTER_STATE_COOKIE, cookie, cookiePath, null, -1, deployment.getSslRequired().isRequired(facade.getRequest().getRemoteAddr()), true);
     }
 
@@ -73,7 +72,11 @@ public class CookieTokenStore {
 
         try {
             // Skip check if token is active now. It's supposed to be done later by the caller
-            AccessToken accessToken = RSATokenVerifier.verifyToken(accessTokenString, deployment.getRealmKey(), deployment.getRealmInfoUrl(), false, true);
+            TokenVerifier<AccessToken> tokenVerifier = AdapterTokenVerifier.createVerifier(accessTokenString, deployment, true, AccessToken.class)
+                    .checkActive(false)
+                    .verify();
+            AccessToken accessToken = tokenVerifier.getToken();
+
             IDToken idToken;
             if (idTokenString != null && idTokenString.length() > 0) {
                 try {
@@ -95,14 +98,30 @@ public class CookieTokenStore {
         }
     }
 
-    public static void removeCookie(HttpFacade facade) {
-        String cookiePath = getContextPath(facade);
+    public static void removeCookie(KeycloakDeployment deployment, HttpFacade facade) {
+        String cookiePath = getCookiePath(deployment, facade);
         facade.getResponse().resetCookie(AdapterConstants.KEYCLOAK_ADAPTER_STATE_COOKIE, cookiePath);
     }
 
-    private static String getContextPath(HttpFacade facade) {
+    static String getCookiePath(KeycloakDeployment deployment, HttpFacade facade) {
+        String path = deployment.getAdapterStateCookiePath() == null ? "" : deployment.getAdapterStateCookiePath().trim();
+        if (path.startsWith("/")) {
+            return path;
+        }
+        String contextPath = getContextPath(facade);
+        StringBuilder cookiePath = new StringBuilder(contextPath);
+        if (!contextPath.endsWith("/") && !path.isEmpty()) {
+            cookiePath.append("/");
+        }
+        return cookiePath.append(path).toString();
+    }
+
+    static String getContextPath(HttpFacade facade) {
         String uri = facade.getRequest().getURI();
         String path = KeycloakUriBuilder.fromUri(uri).getPath();
+        if (path == null || path.isEmpty()) {
+            return "/";
+        }
         int index = path.indexOf("/", 1);
         return index == -1 ? path : path.substring(0, index);
     }

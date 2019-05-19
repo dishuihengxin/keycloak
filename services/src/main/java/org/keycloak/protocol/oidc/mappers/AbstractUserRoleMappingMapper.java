@@ -17,86 +17,154 @@
 
 package org.keycloak.protocol.oidc.mappers;
 
-import org.keycloak.models.ClientSessionModel;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserSessionModel;
+import org.keycloak.protocol.ProtocolMapperUtils;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.IDToken;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.LinkedHashSet;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Base class for mapping of user role mappings to an ID and Access Token claim.
  *
  * @author <a href="mailto:thomas.darimont@gmail.com">Thomas Darimont</a>
  */
-abstract class AbstractUserRoleMappingMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper, OIDCIDTokenMapper {
+abstract class AbstractUserRoleMappingMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
 
     @Override
-    public AccessToken transformAccessToken(AccessToken token, ProtocolMapperModel mappingModel, KeycloakSession session,
-                                            UserSessionModel userSession, ClientSessionModel clientSession) {
-
-        if (!OIDCAttributeMapperHelper.includeInAccessToken(mappingModel)) {
-            return token;
-        }
-
-        setClaim(token, mappingModel, userSession);
-        return token;
+    public int getPriority() {
+        return ProtocolMapperUtils.PRIORITY_ROLE_MAPPER;
     }
 
-    @Override
-    public IDToken transformIDToken(IDToken token, ProtocolMapperModel mappingModel, KeycloakSession session, UserSessionModel userSession, ClientSessionModel clientSession) {
-
-        if (!OIDCAttributeMapperHelper.includeInIDToken(mappingModel)) {
-            return token;
-        }
-
-        setClaim(token, mappingModel, userSession);
-        return token;
-    }
-
-
-    protected abstract void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession);
 
     /**
-     * Returns the role names extracted from the given {@code roleModels} while recursively traversing "Composite Roles".
-     * <p>
-     * Optionally prefixes each role name with the given {@code prefix}.
-     * </p>
+     * Retrieves all roles of the current user based on direct roles set to the user, its groups and their parent groups.
+     * Then it recursively expands all composite roles, and restricts according to the given predicate {@code restriction}.
+     * If the current client sessions is restricted (i.e. no client found in active user session has full scope allowed),
+     * the final list of roles is also restricted by the client scope. Finally, the list is mapped to the token into
+     * a claim.
      *
-     * @param roleModels
-     * @param prefix     the prefix to apply, may be {@literal null}
-     * @return
+     * @param token
+     * @param mappingModel
+     * @param rolesToAdd
+     * @param clientId
+     * @param prefix
      */
-    protected Set<String> flattenRoleModelToRoleNames(Set<RoleModel> roleModels, String prefix) {
+    protected static void setClaim(IDToken token, ProtocolMapperModel mappingModel, Set<String> rolesToAdd,
+                                   String clientId, String prefix) {
 
-        Set<String> roleNames = new LinkedHashSet<>();
-
-        Deque<RoleModel> stack = new ArrayDeque<>(roleModels);
-        while (!stack.isEmpty()) {
-
-            RoleModel current = stack.pop();
-
-            if (current.isComposite()) {
-                for (RoleModel compositeRoleModel : current.getComposites()) {
-                    stack.push(compositeRoleModel);
-                }
-            }
-
-            String roleName = current.getName();
-
-            if (prefix != null && !prefix.trim().isEmpty()) {
-                roleName = prefix.trim() + roleName;
-            }
-
-            roleNames.add(roleName);
+        Set<String> realmRoleNames;
+        if (prefix != null && !prefix.isEmpty()) {
+            realmRoleNames = rolesToAdd.stream()
+                    .map(roleName -> prefix + roleName)
+                    .collect(Collectors.toSet());
+        } else {
+            realmRoleNames = rolesToAdd;
         }
 
-        return roleNames;
+        Object claimValue = realmRoleNames;
+
+        boolean multiValued = "true".equals(mappingModel.getConfig().get(ProtocolMapperUtils.MULTIVALUED));
+        if (!multiValued) {
+            claimValue = realmRoleNames.toString();
+        }
+
+        //OIDCAttributeMapperHelper.mapClaim(token, mappingModel, claimValue);
+        mapClaim(token, mappingModel, claimValue, clientId);
+    }
+
+
+    private static final Pattern CLIENT_ID_PATTERN = Pattern.compile("\\$\\{client_id\\}");
+
+    private static final Pattern DOT_PATTERN = Pattern.compile("\\.");
+    private static final String DOT_REPLACEMENT = "\\\\\\\\.";
+
+    private static void mapClaim(IDToken token, ProtocolMapperModel mappingModel, Object attributeValue, String clientId) {
+        attributeValue = OIDCAttributeMapperHelper.mapAttributeValue(mappingModel, attributeValue);
+        if (attributeValue == null) return;
+
+        String protocolClaim = mappingModel.getConfig().get(OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME);
+        if (protocolClaim == null) {
+            return;
+        }
+
+        if (clientId != null) {
+            // case when clientId contains dots
+            clientId = DOT_PATTERN.matcher(clientId).replaceAll(DOT_REPLACEMENT);
+            protocolClaim = CLIENT_ID_PATTERN.matcher(protocolClaim).replaceAll(clientId);
+        }
+
+        List<String> split = OIDCAttributeMapperHelper.splitClaimPath(protocolClaim);
+
+        // Special case
+        if (checkAccessToken(token, split, attributeValue)) {
+            return;
+        }
+
+        final int length = split.size();
+        int i = 0;
+        Map<String, Object> jsonObject = token.getOtherClaims();
+        for (String component : split) {
+            i++;
+            if (i == length) {
+                // Case when we want to add to existing set of roles
+                Object last = jsonObject.get(component);
+                if (last != null && last instanceof Collection && attributeValue instanceof Collection) {
+                    ((Collection) last).addAll((Collection) attributeValue);
+                } else {
+                    jsonObject.put(component, attributeValue);
+                }
+
+            } else {
+                Map<String, Object> nested = (Map<String, Object>)jsonObject.get(component);
+
+                if (nested == null) {
+                    nested = new HashMap<>();
+                    jsonObject.put(component, nested);
+                }
+
+                jsonObject = nested;
+            }
+        }
+    }
+
+
+    // Special case when roles are put to the access token via "realmAcces, resourceAccess" properties
+    private static boolean checkAccessToken(IDToken idToken, List<String> path, Object attributeValue) {
+        if (!(idToken instanceof AccessToken)) {
+            return false;
+        }
+
+        if (!(attributeValue instanceof Collection)) {
+            return false;
+        }
+
+        Collection<String> roles = (Collection<String>) attributeValue;
+
+        AccessToken token = (AccessToken) idToken;
+        AccessToken.Access access = null;
+        if (path.size() == 2 && "realm_access".equals(path.get(0)) && "roles".equals(path.get(1))) {
+            access = token.getRealmAccess();
+            if (access == null) {
+                access = new AccessToken.Access();
+                token.setRealmAccess(access);
+            }
+        } else if (path.size() == 3 && "resource_access".equals(path.get(0)) && "roles".equals(path.get(2))) {
+            String clientId = path.get(1);
+            access = token.addAccess(clientId);
+        } else {
+            return false;
+        }
+
+        for (String role : roles) {
+            access.addRole(role);
+        }
+        return true;
     }
 }

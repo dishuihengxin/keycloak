@@ -17,6 +17,7 @@
 
 package org.keycloak.testsuite.pages;
 
+import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 
@@ -28,13 +29,24 @@ public class ConsentPage extends AbstractPage {
     @FindBy(id = "kc-login")
     private WebElement submitButton;
 
+    @FindBy(id = "kc-cancel")
+    private WebElement cancelButton;
+
     public void confirm() {
         submitButton.click();
     }
 
+    public void cancel() {
+        cancelButton.click();
+    }
+
     @Override
     public boolean isCurrent() {
-        return driver.getTitle().equalsIgnoreCase("grant access");
+        return isCurrent(driver);
+    }
+
+    public boolean isCurrent(WebDriver driver1) {
+        return PageUtils.getPageTitle(driver1).contains("Grant Access to ");
     }
 
     @Override

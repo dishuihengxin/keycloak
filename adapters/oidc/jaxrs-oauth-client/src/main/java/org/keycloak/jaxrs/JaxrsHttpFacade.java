@@ -17,25 +17,31 @@
 
 package org.keycloak.jaxrs;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.List;
-import java.util.Map;
-
-import javax.security.cert.X509Certificate;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.SecurityContext;
-
 import org.keycloak.KeycloakSecurityContext;
 import org.keycloak.adapters.OIDCHttpFacade;
 import org.keycloak.adapters.spi.AuthenticationError;
 import org.keycloak.adapters.spi.LogoutError;
 import org.keycloak.common.util.HostUtils;
 
+import javax.security.cert.X509Certificate;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.SecurityContext;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.List;
+import java.util.Map;
+
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
+ * @deprecated Class is deprecated and may be removed in the future. If you want to maintain this class for Keycloak community, please
+ * contact Keycloak team on keycloak-dev mailing list. You can fork it into your github repository and
+ * Keycloak team will reference it from "Keycloak Extensions" page.
  */
+@Deprecated
 public class JaxrsHttpFacade implements OIDCHttpFacade {
 
     protected final ContainerRequestContext requestContext;
@@ -52,6 +58,8 @@ public class JaxrsHttpFacade implements OIDCHttpFacade {
 
     protected class RequestFacade implements OIDCHttpFacade.Request {
 
+        private InputStream inputStream;
+
         @Override
         public String getFirstParam(String param) {
             throw new RuntimeException("NOT IMPLEMENTED");
@@ -65,6 +73,11 @@ public class JaxrsHttpFacade implements OIDCHttpFacade {
         @Override
         public String getURI() {
             return requestContext.getUriInfo().getRequestUri().toString();
+        }
+
+        @Override
+        public String getRelativePath() {
+            return requestContext.getUriInfo().getPath();
         }
 
         @Override
@@ -104,6 +117,19 @@ public class JaxrsHttpFacade implements OIDCHttpFacade {
 
         @Override
         public InputStream getInputStream() {
+            return getInputStream(false);
+        }
+
+        @Override
+        public InputStream getInputStream(boolean buffered) {
+            if (inputStream != null) {
+                return inputStream;
+            }
+
+            if (buffered) {
+                return inputStream = new BufferedInputStream(requestContext.getEntityStream());
+            }
+
             return requestContext.getEntityStream();
         }
 

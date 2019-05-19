@@ -17,16 +17,18 @@
 
 package org.keycloak.testsuite.util;
 
-import java.util.Collections;
 import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.RolesRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.events.EventsListenerProviderFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import org.keycloak.representations.idm.RolesRepresentation;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -132,8 +134,23 @@ public class RealmBuilder {
         return this;
     }
 
+    public RealmBuilder notBefore(int i) {
+        rep.setNotBefore(i);
+        return this;
+    }
+
     public RealmBuilder otpLookAheadWindow(int i) {
         rep.setOtpPolicyLookAheadWindow(i);
+        return this;
+    }
+
+    public RealmBuilder bruteForceProtected(boolean bruteForceProtected) {
+        rep.setBruteForceProtected(bruteForceProtected);
+        return this;
+    }
+
+    public RealmBuilder failureFactor(int failureFactor) {
+        rep.setFailureFactor(failureFactor);
         return this;
     }
 
@@ -162,6 +179,11 @@ public class RealmBuilder {
         return this;
     }
 
+    public RealmBuilder passwordPolicy(String passwordPolicy) {
+        rep.setPasswordPolicy(passwordPolicy);
+        return this;
+    }
+
     public RealmRepresentation build() {
         return rep;
     }
@@ -173,6 +195,16 @@ public class RealmBuilder {
 
     public RealmBuilder ssoSessionMaxLifespan(int ssoSessionMaxLifespan) {
         rep.setSsoSessionMaxLifespan(ssoSessionMaxLifespan);
+        return this;
+    }
+
+    public RealmBuilder ssoSessionIdleTimeoutRememberMe(int ssoSessionIdleTimeoutRememberMe){
+        rep.setSsoSessionIdleTimeoutRememberMe(ssoSessionIdleTimeoutRememberMe);
+        return this;
+    }
+
+    public RealmBuilder ssoSessionMaxLifespanRememberMe(int ssoSessionMaxLifespanRememberMe){
+        rep.setSsoSessionMaxLifespanRememberMe(ssoSessionMaxLifespanRememberMe);
         return this;
     }
 
@@ -193,6 +225,30 @@ public class RealmBuilder {
 
     public RealmBuilder ssoSessionIdleTimeout(int sessionIdleTimeout) {
         rep.setSsoSessionIdleTimeout(sessionIdleTimeout);
+        return this;
+    }
+
+    public RealmBuilder group(GroupRepresentation group) {
+        if (rep.getGroups() == null) {
+            rep.setGroups(new ArrayList<>());
+        }
+        rep.getGroups().add(group);
+        return this;
+    }
+
+    // KEYCLOAK-7688 Offline Session Max for Offline Token
+    public RealmBuilder offlineSessionIdleTimeout(int offlineSessionIdleTimeout) {
+        rep.setOfflineSessionIdleTimeout(offlineSessionIdleTimeout);
+        return this;
+    }
+
+    public RealmBuilder offlineSessionMaxLifespan(int offlineSessionMaxLifespan) {
+        rep.setOfflineSessionMaxLifespan(offlineSessionMaxLifespan);
+        return this;
+    }
+
+    public RealmBuilder offlineSessionMaxLifespanEnabled(boolean offlineSessionMaxLifespanEnabled) {
+        rep.setOfflineSessionMaxLifespanEnabled(offlineSessionMaxLifespanEnabled);
         return this;
     }
 }

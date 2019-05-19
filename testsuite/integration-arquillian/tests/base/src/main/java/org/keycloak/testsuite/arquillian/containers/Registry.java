@@ -16,13 +16,6 @@
  */
 package org.keycloak.testsuite.arquillian.containers;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import org.jboss.arquillian.config.descriptor.api.ContainerDef;
 import org.jboss.arquillian.container.impl.ContainerCreationException;
 import org.jboss.arquillian.container.impl.ContainerImpl;
@@ -34,6 +27,14 @@ import org.jboss.arquillian.container.spi.client.deployment.TargetDescription;
 import org.jboss.arquillian.core.api.Injector;
 import org.jboss.arquillian.core.spi.ServiceLoader;
 import org.jboss.arquillian.core.spi.Validate;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import static org.keycloak.testsuite.arquillian.containers.RegistryCreator.ADAPTER_IMPL_CONFIG_STRING;
 import static org.keycloak.testsuite.arquillian.containers.RegistryCreator.getAdapterImplClassValue;
 import static org.keycloak.testsuite.arquillian.containers.RegistryCreator.getContainerAdapter;
@@ -56,7 +57,7 @@ public class Registry implements ContainerRegistry {
 
     private final List<Container> containers;
 
-    private Injector injector;
+    private final Injector injector;
 
     private static final Logger logger = Logger.getLogger(RegistryCreator.class.getName());
 
@@ -97,7 +98,7 @@ public class Registry implements ContainerRegistry {
             return addContainer(injector.inject(
                     new ContainerImpl(definition.getContainerName(), dcService, definition)));
 
-        } catch (Exception e) {
+        } catch (ConfigurationException e) {
             throw new ContainerCreationException("Could not create Container " + definition.getContainerName(), e);
         }
     }

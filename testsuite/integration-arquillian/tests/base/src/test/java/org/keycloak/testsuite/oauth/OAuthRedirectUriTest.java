@@ -16,11 +16,26 @@
  */
 package org.keycloak.testsuite.oauth;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+import org.apache.http.client.CookieStore;
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.impl.client.BasicCookieStore;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.client.HttpClients;
+import org.hamcrest.Matchers;
+import org.hamcrest.core.StringStartsWith;
 import org.jboss.arquillian.graphene.page.Page;
+import org.jgroups.protocols.TP;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.models.Constants;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.AbstractKeycloakTest;
@@ -34,10 +49,13 @@ import org.keycloak.testsuite.util.RealmBuilder;
 import org.openqa.selenium.By;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.net.URL;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.keycloak.testsuite.admin.AbstractAdminTest.loadJson;
 import static org.keycloak.testsuite.util.OAuthClient.APP_ROOT;
 
@@ -53,10 +71,33 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     protected ErrorPage errorPage;
     @Page
     protected LoginPage loginPage;
+    private HttpServer server;
 
     @Override
     public void beforeAbstractKeycloakTest() throws Exception {
         super.beforeAbstractKeycloakTest();
+
+        server = HttpServer.create(new InetSocketAddress(8280), 0);
+        server.createContext("/", new MyHandler());
+        server.setExecutor(null); // creates a default executor
+        server.start();
+    }
+
+    @Override
+    public void afterAbstractKeycloakTest() {
+        super.afterAbstractKeycloakTest();
+
+        server.stop(0);
+    }
+
+    static class MyHandler implements HttpHandler {
+        public void handle(HttpExchange t) throws IOException {
+            String response = "Hello";
+            t.sendResponseHeaders(200, response.length());
+            OutputStream os = t.getResponseBody();
+            os.write(response.getBytes());
+            os.close();
+        }
     }
 
     @Override
@@ -76,26 +117,41 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
         realm.client(installedApp2);
 
         ClientBuilder installedApp3 = ClientBuilder.create().id("test-wildcard").name("test-wildcard")
-                .redirectUris("http://example.com/foo/*", "http://with-dash.example.com/foo/*", "http://localhost:8180/foo/*")
+                .redirectUris("http://example.com/foo/*", "http://with-dash.example.local/foo/*", "http://localhost:8280/foo/*")
                 .secret("password");
         realm.client(installedApp3);
 
         ClientBuilder installedApp4 = ClientBuilder.create().id("test-dash").name("test-dash")
-                .redirectUris("http://with-dash.example.com", "http://with-dash.example.com/foo")
+                .redirectUris("http://with-dash.example.local", "http://with-dash.example.local/foo")
                 .secret("password");
         realm.client(installedApp4);
 
         ClientBuilder installedApp5 = ClientBuilder.create().id("test-root-url").name("test-root-url")
-                .rootUrl("http://with-dash.example.com")
+                .rootUrl("http://with-dash.example.local")
                 .redirectUris("/foo")
                 .secret("password");
         realm.client(installedApp5);
 
         ClientBuilder installedApp6 = ClientBuilder.create().id("test-relative-url").name("test-relative-url")
                 .rootUrl("")
-                .redirectUris("/foo")
+                .redirectUris("/auth")
                 .secret("password");
         realm.client(installedApp6);
+
+        ClientBuilder installedApp7 = ClientBuilder.create().id("test-query-component").name("test-query-component")
+                .redirectUris("http://localhost?foo=bar", "http://localhost?foo=bar*")
+                .secret("password");
+        realm.client(installedApp7);
+
+        ClientBuilder installedApp8 = ClientBuilder.create().id("test-fragment").name("test-fragment")
+                .redirectUris("http://localhost/*", "https://localhost:8543/*")
+                .secret("password");
+        realm.client(installedApp8);
+
+        ClientBuilder installedAppCustomScheme = ClientBuilder.create().id("custom-scheme").name("custom-scheme")
+                .redirectUris("android-app://org.keycloak.examples.cordova/https/keycloak-cordova-example.github.io/login")
+                .secret("password");
+        realm.client(installedAppCustomScheme);
 
         testRealms.add(realm.build());
     }
@@ -103,9 +159,25 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     @Test
     public void testNoParam() throws IOException {
         oauth.redirectUri(null);
-        OAuthClient.AuthorizationCodeResponse response = oauth.doLogin("test-user@localhost", "password");
-        Assert.assertNotNull(response.getCode());
-        assertEquals(oauth.getCurrentRequest(), APP_ROOT + "/auth");
+        oauth.openLoginForm();
+        Assert.assertTrue(errorPage.isCurrent());
+        Assert.assertEquals("Invalid parameter: redirect_uri", errorPage.getError());
+    }
+
+    @Test
+    public void testRelativeUri() throws IOException {
+        oauth.redirectUri("/foo/../bar");
+        oauth.openLoginForm();
+        Assert.assertTrue(errorPage.isCurrent());
+        Assert.assertEquals("Invalid parameter: redirect_uri", errorPage.getError());
+    }
+
+    @Test
+    public void testFileUri() throws IOException {
+        oauth.redirectUri("file://test");
+        oauth.openLoginForm();
+        Assert.assertTrue(errorPage.isCurrent());
+        Assert.assertEquals("Invalid parameter: redirect_uri", errorPage.getError());
     }
 
     @Test
@@ -154,7 +226,7 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     @Test
     public void testValid() throws IOException {
         oauth.redirectUri(APP_ROOT + "/auth");
-        OAuthClient.AuthorizationCodeResponse response = oauth.doLogin("test-user@localhost", "password");
+        OAuthClient.AuthorizationEndpointResponse response = oauth.doLogin("test-user@localhost", "password");
 
         Assert.assertNotNull(response.getCode());
         URL url = new URL(driver.getCurrentUrl());
@@ -175,7 +247,7 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     @Test
     public void testWithParams() throws IOException {
         oauth.redirectUri(APP_ROOT + "/auth?key=value");
-        OAuthClient.AuthorizationCodeResponse response = oauth.doLogin("test-user@localhost", "password");
+        OAuthClient.AuthorizationEndpointResponse response = oauth.doLogin("test-user@localhost", "password");
 
         Assert.assertNotNull(response.getCode());
         URL url = new URL(driver.getCurrentUrl());
@@ -186,52 +258,115 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     }
 
     @Test
+    public void testWithFragment() throws IOException {
+        oauth.clientId("test-fragment");
+        oauth.responseMode("fragment");
+
+        oauth.redirectUri(APP_ROOT + "/auth#key=value");
+        OAuthClient.AuthorizationEndpointResponse response = oauth.doLogin("test-user@localhost", "password");
+
+        Assert.assertNotNull(response.getCode());
+        URL url = new URL(driver.getCurrentUrl());
+        Assert.assertTrue(url.toString().startsWith(APP_ROOT));
+        Assert.assertTrue(url.toString().contains("key=value"));
+    }
+
+    @Test
+    public void testWithCustomScheme() throws IOException {
+        oauth.clientId("custom-scheme");
+
+        oauth.redirectUri("android-app://org.keycloak.examples.cordova/https/keycloak-cordova-example.github.io/login");
+        oauth.openLoginForm();
+
+        RequestConfig globalConfig = RequestConfig.custom().setCookieSpec(CookieSpecs.BEST_MATCH).build();
+        CookieStore cookieStore = new BasicCookieStore();
+        HttpClientContext context = HttpClientContext.create();
+        context.setCookieStore(cookieStore);
+
+        String loginUrl = driver.getCurrentUrl();
+
+        CloseableHttpClient client = HttpClients.custom().setDefaultRequestConfig(globalConfig).setDefaultCookieStore(cookieStore).build();
+
+        try {
+            String loginPage = SimpleHttp.doGet(loginUrl, client).asString();
+
+            String formAction = loginPage.split("action=\"")[1].split("\"")[0].replaceAll("&amp;", "&");
+            SimpleHttp.Response response = SimpleHttp.doPost(formAction, client).param("username", "test-user@localhost").param("password", "password").asResponse();
+
+            response.getStatus();
+            assertThat(response.getFirstHeader("Location"), Matchers.startsWith("android-app://org.keycloak.examples.cordova/https/keycloak-cordova-example.github.io/login"));
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    public void testQueryComponents() throws IOException {
+        // KEYCLOAK-3420
+        oauth.clientId("test-query-component");
+        checkRedirectUri("http://localhost?foo=bar", true);
+        checkRedirectUri("http://localhost?foo=bara", false);
+        checkRedirectUri("http://localhost?foo=bar/", false);
+        checkRedirectUri("http://localhost?foo2=bar2&foo=bar", false);
+        checkRedirectUri("http://localhost?foo=b", false);
+        checkRedirectUri("http://localhost?foo", false);
+        checkRedirectUri("http://localhost?foo=bar&bar=foo", false);
+        checkRedirectUri("http://localhost?foo&bar=foo", false);
+        checkRedirectUri("http://localhost?foo&bar", false);
+        checkRedirectUri("http://localhost", false);
+
+        // KEYCLOAK-3418
+        oauth.clientId("test-installed");
+        checkRedirectUri("http://localhost?foo=bar", false);
+    }
+
+    @Test
     public void testWildcard() throws IOException {
         oauth.clientId("test-wildcard");
         checkRedirectUri("http://example.com", false);
         checkRedirectUri("http://localhost:8080", false, true);
         checkRedirectUri("http://example.com/foo", true);
         checkRedirectUri("http://example.com/foo/bar", true);
-        checkRedirectUri("http://localhost:8180/foo", true, true);
-        checkRedirectUri("http://localhost:8180/foo/bar", true, true);
+        checkRedirectUri("http://localhost:8280/foo", true, true);
+        checkRedirectUri("http://localhost:8280/foo/bar", true, true);
         checkRedirectUri("http://example.com/foobar", false);
-        checkRedirectUri("http://localhost:8180/foobar", false, true);
+        checkRedirectUri("http://localhost:8280/foobar", false, true);
     }
 
     @Test
     public void testDash() throws IOException {
         oauth.clientId("test-dash");
 
-        checkRedirectUri("http://with-dash.example.com/foo", true);
+        checkRedirectUri("http://with-dash.example.local/foo", true);
     }
 
     @Test
     public void testDifferentCaseInHostname() throws IOException {
         oauth.clientId("test-dash");
 
-        checkRedirectUri("http://with-dash.example.com", true);
-        checkRedirectUri("http://wiTh-dAsh.example.com", true);
-        checkRedirectUri("http://with-dash.example.com/foo", true);
-        checkRedirectUri("http://wiTh-dAsh.example.com/foo", true);
-        checkRedirectUri("http://with-dash.eXampLe.com/foo", true);
-        checkRedirectUri("http://wiTh-dAsh.eXampLe.com/foo", true);
-        checkRedirectUri("http://wiTh-dAsh.eXampLe.com/Foo", false);
-        checkRedirectUri("http://wiTh-dAsh.eXampLe.com/foO", false);
+        checkRedirectUri("http://with-dash.example.local", true);
+        checkRedirectUri("http://wiTh-dAsh.example.local", true);
+        checkRedirectUri("http://with-dash.example.local/foo", true);
+        checkRedirectUri("http://wiTh-dAsh.example.local/foo", true);
+        checkRedirectUri("http://with-dash.example.local/foo", true);
+        checkRedirectUri("http://wiTh-dAsh.example.local/foo", true);
+        checkRedirectUri("http://wiTh-dAsh.example.local/Foo", false);
+        checkRedirectUri("http://wiTh-dAsh.example.local/foO", false);
     }
 
     @Test
     public void testDifferentCaseInScheme() throws IOException {
         oauth.clientId("test-dash");
 
-        checkRedirectUri("HTTP://with-dash.example.com", true);
-        checkRedirectUri("Http://wiTh-dAsh.example.com", true);
+        checkRedirectUri("HTTP://with-dash.example.local", true);
+        checkRedirectUri("Http://wiTh-dAsh.example.local", true);
     }
 
     @Test
     public void testRelativeWithRoot() throws IOException {
         oauth.clientId("test-root-url");
 
-        checkRedirectUri("http://with-dash.example.com/foo", true);
+        checkRedirectUri("http://with-dash.example.local/foo", true);
         checkRedirectUri("http://localhost:8180/foo", false);
     }
 
@@ -239,8 +374,8 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
     public void testRelative() throws IOException {
         oauth.clientId("test-relative-url");
 
-        checkRedirectUri("http://with-dash.example.com/foo", false);
-        checkRedirectUri("http://localhost:8180/foo", true);
+        checkRedirectUri("http://with-dash.example.local/foo", false);
+        checkRedirectUri("http://localhost:8180/auth", true);
     }
 
     @Test
@@ -265,35 +400,38 @@ public class OAuthRedirectUriTest extends AbstractKeycloakTest {
         checkRedirectUri("http://localhost/myapp2", false);
     }
 
+    @Test
+    public void okThenNull() throws IOException {
+        oauth.clientId("test-wildcard");
+        oauth.redirectUri("http://localhost:8280/foo");
+        oauth.doLogin("test-user@localhost", "password");
+
+        String code = oauth.getCurrentQuery().get(OAuth2Constants.CODE);
+        Assert.assertNotNull(code);
+        oauth.redirectUri(null);
+
+        OAuthClient.AccessTokenResponse tokenResponse = oauth.doAccessTokenRequest(code, "password");
+
+        Assert.assertEquals("Expected 400, but got something else", 400, tokenResponse.getStatusCode());
+    }
+
     private void checkRedirectUri(String redirectUri, boolean expectValid) throws IOException {
         checkRedirectUri(redirectUri, expectValid, false);
     }
 
     private void checkRedirectUri(String redirectUri, boolean expectValid, boolean checkCodeToToken) throws IOException {
         oauth.redirectUri(redirectUri);
-        oauth.openLoginForm();
 
-        if (expectValid) {
-            Assert.assertTrue(loginPage.isCurrent());
-        } else {
+        if (!expectValid) {
+            oauth.openLoginForm();
             Assert.assertTrue(errorPage.isCurrent());
             Assert.assertEquals("Invalid parameter: redirect_uri", errorPage.getError());
-        }
-
-        if (expectValid) {
-            Assert.assertTrue(loginPage.isCurrent());
-
-            if (checkCodeToToken) {
+        } else {
+            if (!checkCodeToToken) {
+                oauth.openLoginForm();
+                Assert.assertTrue(loginPage.isCurrent());
+            } else {
                 oauth.doLogin("test-user@localhost", "password");
-
-                /*
-                 * Dirty workaround. For some reason the form is not being submitted when you have
-                 * redirectUri like http://localhost:8180 or http://localhost:8180/myapp
-                 * TODO: Revisit this, because it's a weird behavior
-                 */
-                if (driver.findElements(By.name("login")).size() != 0) {
-                    driver.findElement(By.name("login")).click();
-                }
 
                 String code = oauth.getCurrentQuery().get(OAuth2Constants.CODE);
                 Assert.assertNotNull(code);

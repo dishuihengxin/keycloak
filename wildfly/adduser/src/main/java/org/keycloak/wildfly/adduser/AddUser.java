@@ -18,19 +18,28 @@
 package org.keycloak.wildfly.adduser;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import org.jboss.aesh.cl.CommandDefinition;
-import org.jboss.aesh.cl.Option;
-import org.jboss.aesh.cl.parser.ParserGenerator;
-import org.jboss.aesh.console.command.Command;
-import org.jboss.aesh.console.command.CommandNotFoundException;
-import org.jboss.aesh.console.command.CommandResult;
-import org.jboss.aesh.console.command.container.CommandContainer;
-import org.jboss.aesh.console.command.invocation.CommandInvocation;
-import org.jboss.aesh.console.command.registry.AeshCommandRegistryBuilder;
-import org.jboss.aesh.console.command.registry.CommandRegistry;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.impl.container.AeshCommandContainerBuilder;
+import org.aesh.command.impl.invocation.AeshInvocationProviders;
+import org.aesh.command.impl.parser.CommandLineParser;
+import org.aesh.command.invocation.InvocationProviders;
+import org.aesh.command.option.Option;
+import org.aesh.command.Command;
+import org.aesh.command.CommandNotFoundException;
+import org.aesh.command.CommandResult;
+import org.aesh.command.container.CommandContainer;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.impl.registry.AeshCommandRegistryBuilder;
+import org.aesh.command.registry.CommandRegistry;
+import org.aesh.command.registry.CommandRegistryException;
+import org.aesh.command.settings.Settings;
+import org.aesh.command.settings.SettingsBuilder;
+import org.aesh.readline.AeshContext;
 import org.keycloak.common.util.Base64;
-import org.keycloak.hash.Pbkdf2PasswordHashProvider;
-import org.keycloak.models.UserCredentialValueModel;
+import org.keycloak.credential.CredentialModel;
+import org.keycloak.credential.hash.PasswordHashProvider;
+import org.keycloak.credential.hash.PasswordHashProviderFactory;
+import org.keycloak.models.PasswordPolicy;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -40,11 +49,11 @@ import java.io.Console;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ServiceLoader;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -53,35 +62,43 @@ public class AddUser {
 
     private static final String COMMAND_NAME = "add-user";
     private static final int DEFAULT_HASH_ITERATIONS = 100000;
+    private static final String DEFAULT_HASH_ALGORITH = PasswordPolicy.HASH_ALGORITHM_DEFAULT;
 
-    public static void main(String[] args) throws Exception {
-        AddUserCommand command = new AddUserCommand();
+    public static void main(String[] args) {
+        AddUserCommand command;
         try {
-            ParserGenerator.parseAndPopulate(command, COMMAND_NAME, args);
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-            System.exit(1);
-        }
+            Settings settings = SettingsBuilder.builder().build();
+            InvocationProviders invocationProviders = new AeshInvocationProviders(settings);
+            AeshContext aeshContext = settings.aeshContext();
+            CommandLineParser<AddUserCommand<CommandInvocation>> parser = new AeshCommandContainerBuilder<AddUserCommand<CommandInvocation>, CommandInvocation>().create(new AddUserCommand<>()).getParser();
 
-        if (command.isHelp()) {
-            printHelp(command);
-        } else {
-            try {
+            StringBuilder sb = new StringBuilder(COMMAND_NAME);
+            for (String arg : args) {
+                sb.append(" " + arg);
+            }
+            parser.populateObject(sb.toString(), invocationProviders, aeshContext, CommandLineParser.Mode.VALIDATE);
+            command = parser.getCommand();
+
+            if (command.isHelp()) {
+                printHelp(command);
+            } else {
                 String password = command.getPassword();
                 checkRequired(command, "user");
 
-                if(isEmpty(command, "password")){
+                if (isEmpty(command, "password")) {
                     password = promptForInput();
                 }
 
                 File addUserFile = getAddUserFile(command);
 
                 createUser(addUserFile, command.getRealm(), command.getUser(), password, command.getRoles(), command.getIterations());
-            } catch (Exception e) {
-                System.err.println(e.getMessage());
-                System.exit(1);
             }
         }
+        catch (Exception e){
+            System.err.println(e.getMessage());
+            System.exit(1);
+        }
+
     }
 
     private static File getAddUserFile(AddUserCommand command) throws Exception {
@@ -153,14 +170,18 @@ public class AddUser {
         user.setUsername(userName);
         user.setCredentials(new LinkedList<CredentialRepresentation>());
 
-        UserCredentialValueModel credentialValueModel = new Pbkdf2PasswordHashProvider().encode(password, iterations > 0 ? iterations : DEFAULT_HASH_ITERATIONS);
+        PasswordHashProviderFactory hashProviderFactory = getHashProviderFactory(DEFAULT_HASH_ALGORITH);
+        PasswordHashProvider hashProvider = hashProviderFactory.create(null);
+
+        CredentialModel credentialModel = new CredentialModel();
+        hashProvider.encode(password, iterations > 0 ? iterations : DEFAULT_HASH_ITERATIONS, credentialModel);
 
         CredentialRepresentation credentials = new CredentialRepresentation();
-        credentials.setType(credentialValueModel.getType());
-        credentials.setAlgorithm(credentialValueModel.getAlgorithm());
-        credentials.setHashIterations(credentialValueModel.getHashIterations());
-        credentials.setSalt(Base64.encodeBytes(credentialValueModel.getSalt()));
-        credentials.setHashedSaltedValue(credentialValueModel.getValue());
+        credentials.setType(credentialModel.getType());
+        credentials.setAlgorithm(credentialModel.getAlgorithm());
+        credentials.setHashIterations(credentialModel.getHashIterations());
+        credentials.setSalt(Base64.encodeBytes(credentialModel.getSalt()));
+        credentials.setHashedSaltedValue(credentialModel.getValue());
 
         user.getCredentials().add(credentials);
 
@@ -204,6 +225,16 @@ public class AddUser {
         System.out.println("Added '" + userName + "' to '" + addUserFile + "', restart server to load user");
     }
 
+    private static PasswordHashProviderFactory getHashProviderFactory(String providerId) {
+        ServiceLoader<PasswordHashProviderFactory> providerFactories = ServiceLoader.load(PasswordHashProviderFactory.class);
+        for (PasswordHashProviderFactory f : providerFactories) {
+            if (f.getId().equals(providerId)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
     private static void checkRequired(Command command, String field) throws Exception {
         if (isEmpty(command, field)) {
             Option option = command.getClass().getDeclaredField(field).getAnnotation(Option.class);
@@ -238,7 +269,7 @@ public class AddUser {
         return new String(passwordArray);
     }
 
-    private static void printHelp(Command command) throws CommandNotFoundException {
+    private static void printHelp(Command command) throws CommandNotFoundException, CommandRegistryException {
         CommandRegistry registry = new AeshCommandRegistryBuilder().command(command).create();
         CommandContainer commandContainer = registry.getCommand(command.getClass().getAnnotation(CommandDefinition.class).name(), null);
         String help = commandContainer.printHelp(null);
@@ -246,7 +277,7 @@ public class AddUser {
     }
 
     @CommandDefinition(name= COMMAND_NAME, description = "[options...]")
-    public static class AddUserCommand implements Command {
+    public static class AddUserCommand<CI extends CommandInvocation> implements Command<CI> {
 
         @Option(shortName = 'r', hasValue = true, description = "Name of realm to add user to")
         private String realm;
@@ -276,7 +307,7 @@ public class AddUser {
         private boolean help;
 
         @Override
-        public CommandResult execute(CommandInvocation commandInvocation) throws IOException, InterruptedException {
+        public CommandResult execute(CommandInvocation commandInvocation) throws InterruptedException {
             return CommandResult.SUCCESS;
         }
 

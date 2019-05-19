@@ -1,11 +1,16 @@
 package org.keycloak.testsuite.console.page.clients.mappers;
 
+import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.keycloak.testsuite.console.page.fragment.OnOffSwitch;
 import org.keycloak.testsuite.page.Form;
-import static org.keycloak.testsuite.util.WaitUtils.pause;
+import org.keycloak.testsuite.util.UIUtils;
+import org.keycloak.testsuite.util.WaitUtils;
+import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 
 
 /**
@@ -35,49 +40,43 @@ public class CreateClientMappersForm extends Form {
     @FindBy(id = "name")
     private WebElement nameElement;
 
-    @FindBy(xpath = ".//div[@class='onoffswitch' and ./input[@id='consentRequired']]")
-    private OnOffSwitch consentRequiredSwitch;
-
-    @FindBy(id = "consentText")
-    private WebElement consentTextElement;
-
     @FindBy(id = "mapperTypeCreate")
     private Select mapperTypeSelect;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Property']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Property')]//following-sibling::node()//input[@type='text']")
     private WebElement propertyInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='User Attribute']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'User Attribute')]//following-sibling::node()//input[@type='text']")
     private WebElement userAttributeInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='User Session Note']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'User Session Note')]//following-sibling::node()//input[@type='text']")
     private WebElement userSessionNoteInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Multivalued']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Multivalued')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch multivaluedInput;
 
     @FindBy(xpath = ".//button[text() = 'Select Role']/../..//input")
     private WebElement roleInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='New Role Name']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'New Role Name')]//following-sibling::node()//input[@type='text']")
     private WebElement newRoleInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Token Claim Name']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Token Claim Name')]//following-sibling::node()//input[@type='text']")
     private WebElement tokenClaimNameInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Claim value']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Claim value')]//following-sibling::node()//input[@type='text']")
     private WebElement tokenClaimValueInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Claim JSON Type']//following-sibling::node()//select")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Claim JSON Type')]//following-sibling::node()//select")
     private Select claimJSONTypeInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Add to ID token']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Add to ID token')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch addToIDTokenInput;
 
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Add to access token']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Add to access token')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch addToAccessTokenInput;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Full group path']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Full group path')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch fullGroupPath;
 
     @FindBy(xpath = ".//button[text() = 'Select Role']")
@@ -87,16 +86,19 @@ public class CreateClientMappersForm extends Form {
     private RoleSelectorModalDialog roleSelectorModalDialog;
 
     public class RoleSelectorModalDialog {
+        @Drone
+        private WebDriver driver;
+
         @FindBy(id = "available")
         private Select realmAvailable;
-        @FindBy(xpath = ".//button[@tooltip='Select realm role']")
+        @FindBy(xpath = ".//button[@tooltip='Select realm role' and not(@disabled)]")
         private WebElement selectRealmRoleButton;
         
         @FindBy(id = "available-client")
         private Select clientAvailable;
         @FindBy(id = "clients")
         private Select clientSelect;
-        @FindBy(xpath = ".//button[@tooltip='Select client role']")
+        @FindBy(xpath = ".//button[@tooltip='Select client role' and not(@disabled)]")
         private WebElement selectClientRoleButton;
         @FindBy(xpath = ".//button[@class='close']")
         private WebElement closeButton;
@@ -109,8 +111,9 @@ public class CreateClientMappersForm extends Form {
             if (roleName != null) {
                 realmAvailable.selectByVisibleText(roleName);
             }
+            WaitUtils.pause(1000);
             selectRealmRoleButton.click();
-            pause(500); // wait for the modal dialog to fade out
+            WaitUtils.waitForModalFadeOut();
         }
         
         public void selectClientRole(String clientName, String roleName) {
@@ -118,8 +121,9 @@ public class CreateClientMappersForm extends Form {
                 clientSelect.selectByVisibleText(clientName);
                 clientAvailable.selectByVisibleText(roleName);
             }
+            WaitUtils.pause(1000);
             selectClientRoleButton.click();
-            pause(500); // wait for the modal dialog to fade out
+            WaitUtils.waitForModalFadeOut();
         }
     }
     
@@ -143,23 +147,7 @@ public class CreateClientMappersForm extends Form {
     }
     
     public void setName(String value) {
-        setInputValue(nameElement, value);
-    }
-    
-    public boolean isConsentRequired() {
-        return consentRequiredSwitch.isOn();
-    }
-
-    public void setConsentRequired(boolean consentRequired) {
-        consentRequiredSwitch.setOn(consentRequired);
-    }
-
-    public String getConsentText() {
-        return getInputValue(consentTextElement);
-    }
-
-    public void setConsentText(String consentText) {
-        setInputValue(consentTextElement, consentText);
+        UIUtils.setTextInputValue(nameElement, value);
     }
 
     public void setMapperType(String type) {
@@ -167,27 +155,27 @@ public class CreateClientMappersForm extends Form {
     }
     
     public String getProperty() {
-        return getInputValue(propertyInput);
+        return UIUtils.getTextInputValue(propertyInput);
     }
     
     public void setProperty(String value) {
-        setInputValue(propertyInput, value);
+        UIUtils.setTextInputValue(propertyInput, value);
     }
 
     public String getUserAttribute() {
-        return getInputValue(userAttributeInput);
+        return UIUtils.getTextInputValue(userAttributeInput);
     }
 
     public void setUserAttribute(String value) {
-        setInputValue(userAttributeInput, value);
+        UIUtils.setTextInputValue(userAttributeInput, value);
     }
 
     public String getUserSessionNote() {
-        return getInputValue(userSessionNoteInput);
+        return UIUtils.getTextInputValue(userSessionNoteInput);
     }
 
     public void setUserSessionNote(String value) {
-        setInputValue(userSessionNoteInput, value);
+        UIUtils.setTextInputValue(userSessionNoteInput, value);
     }
 
     public boolean isMultivalued() {
@@ -199,39 +187,39 @@ public class CreateClientMappersForm extends Form {
     }
 
     public String getRole() {
-        return getInputValue(roleInput);
+        return UIUtils.getTextInputValue(roleInput);
     }
 
     public void setRole(String value) {
-        setInputValue(roleInput, value);
+        UIUtils.setTextInputValue(roleInput, value);
     }
 
     public String getNewRole() {
-        return getInputValue(newRoleInput);
+        return UIUtils.getTextInputValue(newRoleInput);
     }
 
     public void setNewRole(String value) {
-        setInputValue(newRoleInput, value);
+        UIUtils.setTextInputValue(newRoleInput, value);
     }
 
     public String getTokenClaimName() {
-        return getInputValue(tokenClaimNameInput);
+        return UIUtils.getTextInputValue(tokenClaimNameInput);
     }
 
     public void setTokenClaimName(String value) {
-        setInputValue(tokenClaimNameInput, value);
+        UIUtils.setTextInputValue(tokenClaimNameInput, value);
     }
 
     public String getTokenClaimValue() {
-        return getInputValue(tokenClaimValueInput);
+        return UIUtils.getTextInputValue(tokenClaimValueInput);
     }
 
     public void setTokenClaimValue(String value) {
-        setInputValue(tokenClaimValueInput, value);
+        UIUtils.setTextInputValue(tokenClaimValueInput, value);
     }
 
     public String getClaimJSONType() {
-        return claimJSONTypeInput.getFirstSelectedOption().getText();
+        return getTextFromElement(claimJSONTypeInput.getFirstSelectedOption());
     }
 
     public void setClaimJSONType(String value) {
@@ -263,33 +251,33 @@ public class CreateClientMappersForm extends Form {
     }
     
     //SAML
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Role attribute name']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Role attribute name')]//following-sibling::node()//input[@type='text']")
     private WebElement roleAttributeNameInput;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Friendly Name']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Friendly Name')]//following-sibling::node()//input[@type='text']")
     private WebElement friendlyNameInput;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='SAML Attribute NameFormat']//following-sibling::node()//select")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'SAML Attribute NameFormat')]//following-sibling::node()//select")
     private Select samlAttributeNameFormatSelect;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Single Role Attribute']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Single Role Attribute')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch singleRoleAttributeSwitch;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Attribute value']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Attribute value')]//following-sibling::node()//input[@type='text']")
     private WebElement attributeValueInput;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Group attribute name']//following-sibling::node()//input[@type='text']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Group attribute name')]//following-sibling::node()//input[@type='text']")
     private WebElement groupAttributeNameInput;
     
-    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[text()='Single Group Attribute']//following-sibling::node()//div[@class='onoffswitch']")
+    @FindBy(xpath = ".//div[@properties='model.mapperType.properties']//label[contains(text(),'Single Group Attribute')]//following-sibling::node()//div[@class='onoffswitch']")
     private OnOffSwitch singleGroupAttributeSwitch;
     
     public void setRoleAttributeName(String value) {
-        setInputValue(roleAttributeNameInput, value);
+        UIUtils.setTextInputValue(roleAttributeNameInput, value);
     }
     
     public void setFriendlyName(String value) {
-        setInputValue(friendlyNameInput, value);
+        UIUtils.setTextInputValue(friendlyNameInput, value);
     }
 
     public void setSamlAttributeNameFormat(String value) {
@@ -301,11 +289,11 @@ public class CreateClientMappersForm extends Form {
     }
     
     public void setAttributeValue(String value) {
-        setInputValue(attributeValueInput, value);
+        UIUtils.setTextInputValue(attributeValueInput, value);
     }
     
     public void setGroupAttributeName(String value) {
-        setInputValue(groupAttributeNameInput, value);
+        UIUtils.setTextInputValue(groupAttributeNameInput, value);
     }
     
     public void setSingleGroupAttribute(boolean value) {

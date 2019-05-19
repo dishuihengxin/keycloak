@@ -22,6 +22,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.authentication.AuthenticationFlow;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
@@ -40,6 +41,7 @@ import org.keycloak.testsuite.pages.ErrorPage;
 import org.keycloak.testsuite.pages.LoginPage;
 import org.keycloak.testsuite.pages.LoginPasswordUpdatePage;
 import org.keycloak.testsuite.pages.RegisterPage;
+import org.keycloak.testsuite.pages.TermsAndConditionsPage;
 import org.keycloak.testsuite.rest.representation.AuthenticatorState;
 import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.ExecutionBuilder;
@@ -48,7 +50,13 @@ import org.keycloak.testsuite.util.OAuthClient;
 import org.keycloak.testsuite.util.RealmRepUtil;
 import org.keycloak.testsuite.util.UserBuilder;
 
+import javax.ws.rs.core.Response;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.Assert.assertEquals;
+import static org.keycloak.testsuite.util.Matchers.statusCodeIs;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -82,6 +90,11 @@ public class CustomFlowTest extends AbstractFlowTest {
     @Before
     public void configureFlows() {
         userId = findUser("login-test").getId();
+
+        // Do this just once per class
+        if (testContext.isInitialized()) {
+            return;
+        }
 
         AuthenticationFlowRepresentation flow = FlowBuilder.create()
                                                            .alias("dummy")
@@ -156,6 +169,8 @@ public class CustomFlowTest extends AbstractFlowTest {
                         .authenticatorFlow(false)
                         .build();
         testRealm().flows().addExecution(execution);
+
+        testContext.setInitialized(true);
     }
 
 
@@ -172,6 +187,10 @@ public class CustomFlowTest extends AbstractFlowTest {
     protected ErrorPage errorPage;
 
     @Page
+    protected TermsAndConditionsPage termsPage;
+
+
+    @Page
     protected LoginPasswordUpdatePage updatePasswordPage;
 
     @Page
@@ -179,10 +198,60 @@ public class CustomFlowTest extends AbstractFlowTest {
 
     private static String userId;
 
+    /**
+     * KEYCLOAK-3506
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testRequiredAfterAlternative() throws Exception {
+        AuthenticationManagementResource authMgmtResource = testRealm().flows();
+        Map<String, String> params = new HashMap();
+        String flowAlias = "Browser Flow With Extra";
+        params.put("newName", flowAlias);
+        Response response = authMgmtResource.copy("browser", params);
+        String flowId = null;
+        try {
+            Assert.assertThat("Copy flow", response, statusCodeIs(Response.Status.CREATED));
+            AuthenticationFlowRepresentation newFlow = findFlowByAlias(flowAlias);
+            flowId = newFlow.getId();
+        } finally {
+            response.close();
+        }
+
+        AuthenticationExecutionRepresentation execution = ExecutionBuilder.create()
+                .parentFlow(flowId)
+                .requirement(AuthenticationExecutionModel.Requirement.REQUIRED.toString())
+                .authenticator(ClickThroughAuthenticator.PROVIDER_ID)
+                .priority(10)
+                .authenticatorFlow(false)
+                .build();
+        testRealm().flows().addExecution(execution);
+
+        RealmRepresentation rep = testRealm().toRepresentation();
+        rep.setBrowserFlow(flowAlias);
+        testRealm().update(rep);
+        rep = testRealm().toRepresentation();
+        Assert.assertEquals(flowAlias, rep.getBrowserFlow());
+
+        loginPage.open();
+        String url = driver.getCurrentUrl();
+        // test to make sure we aren't skipping anything
+        loginPage.login("test-user@localhost", "bad-password");
+        Assert.assertTrue(loginPage.isCurrent());
+        loginPage.login("test-user@localhost", "password");
+        Assert.assertTrue(termsPage.isCurrent());
+
+        // Revert dummy flow
+        rep.setBrowserFlow("dummy");
+        testRealm().update(rep);
+    }
+
     @Test
     public void loginSuccess() {
         AuthenticatorState state = new AuthenticatorState();
         state.setUsername("login-test");
+        state.setClientId("test-app");
         testingClient.testing().updateAuthenticator(state);
 
         oauth.openLoginForm();
@@ -197,6 +266,7 @@ public class CustomFlowTest extends AbstractFlowTest {
     public void grantTest() throws Exception {
         AuthenticatorState state = new AuthenticatorState();
         state.setUsername("login-test");
+        state.setClientId("test-app");
         testingClient.testing().updateAuthenticator(state);
 
         grantAccessToken("test-app", "login-test");
@@ -230,6 +300,9 @@ public class CustomFlowTest extends AbstractFlowTest {
                 .removeDetail(Details.CONSENT)
                 .error(Errors.INVALID_CLIENT_CREDENTIALS)
                 .assertEvent();
+
+        state.setClientId("test-app");
+        testingClient.testing().updateAuthenticator(state);
     }
 
 
@@ -240,7 +313,7 @@ public class CustomFlowTest extends AbstractFlowTest {
         assertEquals(200, response.getStatusCode());
 
         AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
-        RefreshToken refreshToken = oauth.verifyRefreshToken(response.getRefreshToken());
+        RefreshToken refreshToken = oauth.parseRefreshToken(response.getRefreshToken());
 
         events.expectLogin()
                 .client(clientId)
@@ -261,7 +334,7 @@ public class CustomFlowTest extends AbstractFlowTest {
         OAuthClient.AccessTokenResponse refreshedResponse = oauth.doRefreshTokenRequest(response.getRefreshToken(), "password");
 
         AccessToken refreshedAccessToken = oauth.verifyToken(refreshedResponse.getAccessToken());
-        RefreshToken refreshedRefreshToken = oauth.verifyRefreshToken(refreshedResponse.getRefreshToken());
+        RefreshToken refreshedRefreshToken = oauth.parseRefreshToken(refreshedResponse.getRefreshToken());
 
         assertEquals(accessToken.getSessionState(), refreshedAccessToken.getSessionState());
         assertEquals(accessToken.getSessionState(), refreshedRefreshToken.getSessionState());

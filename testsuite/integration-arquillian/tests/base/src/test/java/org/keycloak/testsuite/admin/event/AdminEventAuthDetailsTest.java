@@ -17,9 +17,6 @@
 
 package org.keycloak.testsuite.admin.event;
 
-import java.util.Collections;
-import java.util.List;
-
 import org.junit.Before;
 import org.junit.ComparisonFailure;
 import org.junit.Rule;
@@ -27,6 +24,7 @@ import org.junit.Test;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.AdminRoles;
 import org.keycloak.models.Constants;
 import org.keycloak.models.utils.KeycloakModelUtils;
@@ -41,6 +39,10 @@ import org.keycloak.testsuite.util.AssertAdminEvents;
 import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.RealmBuilder;
 import org.keycloak.testsuite.util.UserBuilder;
+import org.keycloak.testsuite.utils.tls.TLSUtils;
+
+import java.util.Collections;
+import java.util.List;
 
 import static org.keycloak.testsuite.auth.page.AuthRealm.ADMIN;
 import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
@@ -126,9 +128,8 @@ public class AdminEventAuthDetailsTest extends AbstractAuthTest {
     }
 
     private void testClient(String realmName, String username, String password, String clientId, String expectedRealmId, String expectedClientUuid, String expectedUserId) {
-        Keycloak keycloak = Keycloak.getInstance(AuthServerTestEnricher.getAuthServerContextRoot() + "/auth",
-                realmName, username, password, clientId);
-        try {
+        try (Keycloak keycloak = Keycloak.getInstance(AuthServerTestEnricher.getAuthServerContextRoot() + "/auth",
+                realmName, username, password, clientId, TLSUtils.initializeTLS())) {
             UserRepresentation rep = UserBuilder.create().id(appUserId).username("app-user").email("foo@email.org").build();
             keycloak.realm("test").users().get(appUserId).update(rep);
 
@@ -136,11 +137,10 @@ public class AdminEventAuthDetailsTest extends AbstractAuthTest {
                     .realmId(realmUuid)
                     .operationType(OperationType.UPDATE)
                     .resourcePath(AdminEventPaths.userResourcePath(appUserId))
+                    .resourceType(ResourceType.USER)
                     .representation(rep)
                     .authDetails(expectedRealmId, expectedClientUuid, expectedUserId)
                     .assertEvent();
-        } finally {
-            keycloak.close();
         }
     }
 }

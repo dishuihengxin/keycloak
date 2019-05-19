@@ -17,55 +17,62 @@
  */
 package org.keycloak.authorization.policy.provider.aggregated;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
 import org.keycloak.authorization.AuthorizationProvider;
+import org.keycloak.authorization.Decision;
 import org.keycloak.authorization.model.Policy;
+import org.keycloak.authorization.permission.ResourcePermission;
 import org.keycloak.authorization.policy.evaluation.DecisionResultCollector;
 import org.keycloak.authorization.policy.evaluation.DefaultEvaluation;
 import org.keycloak.authorization.policy.evaluation.Evaluation;
 import org.keycloak.authorization.policy.evaluation.Result;
 import org.keycloak.authorization.policy.provider.PolicyProvider;
-import org.keycloak.authorization.policy.provider.PolicyProviderFactory;
-
-import java.util.List;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
  */
 public class AggregatePolicyProvider implements PolicyProvider {
 
-    private final Policy policy;
-    private final AuthorizationProvider authorization;
-
-    public AggregatePolicyProvider(Policy policy, AuthorizationProvider authorization) {
-        this.policy = policy;
-        this.authorization = authorization;
-    }
-
     @Override
     public void evaluate(Evaluation evaluation) {
-        //TODO: need to detect deep recursions
         DecisionResultCollector decision = new DecisionResultCollector() {
             @Override
-            protected void onComplete(List<Result> results) {
-                if (results.isEmpty()) {
-                    evaluation.deny();
+            protected void onComplete(Result result) {
+                if (isGranted(result.getResults().iterator().next())) {
+                    evaluation.grant();
                 } else {
-                    Result result = results.iterator().next();
-
-                    if (Effect.PERMIT.equals(result.getEffect())) {
-                        evaluation.grant();
-                    }
+                    evaluation.deny();
                 }
             }
         };
+        AuthorizationProvider authorization = evaluation.getAuthorizationProvider();
+        Policy policy = evaluation.getPolicy();
+        DefaultEvaluation defaultEvaluation = DefaultEvaluation.class.cast(evaluation);
+        Map<Policy, Map<Object, Decision.Effect>> decisionCache = defaultEvaluation.getDecisionCache();
+        ResourcePermission permission = evaluation.getPermission();
 
-        this.policy.getAssociatedPolicies().forEach(associatedPolicy -> {
-            PolicyProviderFactory providerFactory = authorization.getProviderFactory(associatedPolicy.getType());
-            PolicyProvider policyProvider = providerFactory.create(associatedPolicy, authorization);
-            policyProvider.evaluate(new DefaultEvaluation(evaluation.getPermission(), evaluation.getContext(), policy, associatedPolicy, decision));
-        });
+        for (Policy associatedPolicy : policy.getAssociatedPolicies()) {
+            Map<Object, Decision.Effect> decisions = decisionCache.computeIfAbsent(associatedPolicy, p -> new HashMap<>());
+            Decision.Effect effect = decisions.get(permission);
+            DefaultEvaluation eval = new DefaultEvaluation(evaluation.getPermission(), evaluation.getContext(), policy, associatedPolicy, decision, authorization, decisionCache);
 
-        decision.onComplete();
+            if (effect == null) {
+                PolicyProvider policyProvider = authorization.getProvider(associatedPolicy.getType());
+
+                policyProvider.evaluate(eval);
+
+                eval.denyIfNoEffect();
+                decisions.put(permission, eval.getEffect());
+            } else {
+                eval.setEffect(effect);
+            }
+        }
+
+        decision.onComplete(permission);
     }
 
     @Override

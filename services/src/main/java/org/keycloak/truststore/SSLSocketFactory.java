@@ -29,7 +29,7 @@ import java.net.Socket;
  * <p>
  * This SSLSocketFactory can only use truststore configured by TruststoreProvider after the ProviderFactory was
  * initialized using standard Spi load / init mechanism. That will only happen if "truststore" provider is configured
- * in keycloak-server.json.
+ * in standalone.xml or domain.xml.
  * <p>
  * If TruststoreProvider is not available this SSLSocketFactory will delegate all operations to javax.net.ssl.SSLSocketFactory.getDefault().
  *
@@ -101,4 +101,10 @@ public class SSLSocketFactory extends javax.net.ssl.SSLSocketFactory {
     public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException {
         return sslsf.createSocket(address, port, localAddress, localPort);
     }
+
+    @Override
+    public Socket createSocket() throws IOException {
+        return sslsf.createSocket();
+    }
+
 }

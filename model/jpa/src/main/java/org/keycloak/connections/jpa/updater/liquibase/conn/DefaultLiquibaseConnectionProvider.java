@@ -17,24 +17,11 @@
 
 package org.keycloak.connections.jpa.updater.liquibase.conn;
 
-import java.sql.Connection;
-
-import org.jboss.logging.Logger;
-import org.keycloak.Config;
-import org.keycloak.connections.jpa.updater.liquibase.LiquibaseJpaUpdaterProvider;
-import org.keycloak.connections.jpa.updater.liquibase.PostgresPlusDatabase;
-import org.keycloak.connections.jpa.updater.liquibase.lock.CustomInsertLockRecordGenerator;
-import org.keycloak.connections.jpa.updater.liquibase.lock.CustomLockDatabaseChangeLogGenerator;
-import org.keycloak.connections.jpa.updater.liquibase.lock.DummyLockService;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
-
 import liquibase.Liquibase;
 import liquibase.changelog.ChangeSet;
 import liquibase.changelog.DatabaseChangeLog;
 import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
-import liquibase.database.core.DB2Database;
 import liquibase.database.jvm.JdbcConnection;
 import liquibase.exception.LiquibaseException;
 import liquibase.logging.LogFactory;
@@ -43,6 +30,18 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 import liquibase.resource.ResourceAccessor;
 import liquibase.servicelocator.ServiceLocator;
 import liquibase.sqlgenerator.SqlGeneratorFactory;
+import org.jboss.logging.Logger;
+import org.keycloak.Config;
+import org.keycloak.connections.jpa.updater.liquibase.LiquibaseJpaUpdaterProvider;
+import org.keycloak.connections.jpa.updater.liquibase.PostgresPlusDatabase;
+import org.keycloak.connections.jpa.updater.liquibase.UpdatedMySqlDatabase;
+import org.keycloak.connections.jpa.updater.liquibase.lock.CustomInsertLockRecordGenerator;
+import org.keycloak.connections.jpa.updater.liquibase.lock.CustomLockDatabaseChangeLogGenerator;
+import org.keycloak.connections.jpa.updater.liquibase.lock.DummyLockService;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+
+import java.sql.Connection;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -95,6 +94,8 @@ public class DefaultLiquibaseConnectionProvider implements LiquibaseConnectionPr
 
         // Adding PostgresPlus support to liquibase
         DatabaseFactory.getInstance().register(new PostgresPlusDatabase());
+        // Adding newer version of MySQL/MariaDB support to liquibase
+        DatabaseFactory.getInstance().register(new UpdatedMySqlDatabase());
 
         // Change command for creating lock and drop DELETE lock record from it
         SqlGeneratorFactory.getInstance().register(new CustomInsertLockRecordGenerator());
@@ -130,7 +131,7 @@ public class DefaultLiquibaseConnectionProvider implements LiquibaseConnectionPr
             database.setDefaultSchemaName(defaultSchema);
         }
 
-        String changelog = (database instanceof DB2Database) ? LiquibaseJpaUpdaterProvider.DB2_CHANGELOG :  LiquibaseJpaUpdaterProvider.CHANGELOG;
+        String changelog = LiquibaseJpaUpdaterProvider.CHANGELOG;
         ResourceAccessor resourceAccessor = new ClassLoaderResourceAccessor(getClass().getClassLoader());
 
         logger.debugf("Using changelog file %s and changelogTableName %s", changelog, database.getDatabaseChangeLogTableName());
@@ -155,7 +156,7 @@ public class DefaultLiquibaseConnectionProvider implements LiquibaseConnectionPr
 
     private static class LogWrapper extends LogFactory {
 
-        private liquibase.logging.Logger logger = new liquibase.logging.Logger() {
+        private static final liquibase.logging.Logger logger = new liquibase.logging.Logger() {
             @Override
             public void setName(String name) {
             }
@@ -242,6 +243,9 @@ public class DefaultLiquibaseConnectionProvider implements LiquibaseConnectionPr
             public int getPriority() {
                 return 0;
             }
+
+            @Override
+            public void closeLogFile() {}
         };
 
         @Override

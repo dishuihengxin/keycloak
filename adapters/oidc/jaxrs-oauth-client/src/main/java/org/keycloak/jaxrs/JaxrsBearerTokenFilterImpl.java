@@ -20,8 +20,6 @@ package org.keycloak.jaxrs;
 import org.keycloak.KeycloakPrincipal;
 import org.keycloak.adapters.AdapterDeploymentContext;
 import org.keycloak.adapters.AdapterUtils;
-import org.keycloak.adapters.spi.AuthChallenge;
-import org.keycloak.adapters.spi.AuthOutcome;
 import org.keycloak.adapters.AuthenticatedActionsHandler;
 import org.keycloak.adapters.BasicAuthRequestAuthenticator;
 import org.keycloak.adapters.BearerTokenRequestAuthenticator;
@@ -31,6 +29,8 @@ import org.keycloak.adapters.KeycloakDeploymentBuilder;
 import org.keycloak.adapters.NodesRegistrationManagement;
 import org.keycloak.adapters.PreAuthActionsHandler;
 import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
+import org.keycloak.adapters.spi.AuthChallenge;
+import org.keycloak.adapters.spi.AuthOutcome;
 import org.keycloak.adapters.spi.UserSessionManagement;
 import org.keycloak.common.constants.GenericConstants;
 
@@ -40,7 +40,6 @@ import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.PreMatching;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.SecurityContext;
-
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -53,9 +52,13 @@ import java.util.logging.Logger;
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
+ * @deprecated Class is deprecated and may be removed in the future. If you want to maintain this class for Keycloak community, please
+ * contact Keycloak team on keycloak-dev mailing list. You can fork it into your github repository and
+ * Keycloak team will reference it from "Keycloak Extensions" page.
  */
 @PreMatching
 @Priority(Priorities.AUTHENTICATION)
+@Deprecated
 public class JaxrsBearerTokenFilterImpl implements JaxrsBearerTokenFilter {
 
     private final static Logger log = Logger.getLogger("" + JaxrsBearerTokenFilterImpl.class);

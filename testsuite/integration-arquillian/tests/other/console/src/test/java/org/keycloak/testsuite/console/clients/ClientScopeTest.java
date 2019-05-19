@@ -21,10 +21,7 @@
  */
 package org.keycloak.testsuite.console.clients;
 
-import java.util.List;
-import java.util.Map;
 import org.jboss.arquillian.graphene.page.Page;
-import static org.junit.Assert.*;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -32,10 +29,16 @@ import org.keycloak.representations.idm.ClientMappingsRepresentation;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.MappingsRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
-import static org.keycloak.testsuite.auth.page.login.Login.OIDC;
 import org.keycloak.testsuite.console.page.clients.scope.ClientScope;
 
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.Assert.*;
+import static org.keycloak.testsuite.auth.page.login.Login.OIDC;
+
 /**
+ * Test for the "Scope" tab of client (Client role mappings)
  *
  * @author <a href="mailto:vramik@redhat.com">Vlastislav Ramik</a>
  */

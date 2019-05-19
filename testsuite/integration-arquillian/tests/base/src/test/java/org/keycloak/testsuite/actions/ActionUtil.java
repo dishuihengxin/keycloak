@@ -17,13 +17,15 @@
 
 package org.keycloak.testsuite.actions;
 
-import java.util.LinkedList;
-import java.util.List;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.RequiredActionProviderRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.util.UserBuilder;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  *
@@ -51,12 +53,15 @@ public class ActionUtil {
     public static void addRequiredActionForRealm(RealmRepresentation testRealm, String providerId) {
         List<RequiredActionProviderRepresentation> requiredActions = testRealm.getRequiredActions();
         if (requiredActions == null) requiredActions = new LinkedList();
+        
+        RequiredActionProviderRepresentation last = requiredActions.get(requiredActions.size() - 1);
 
         RequiredActionProviderRepresentation action = new RequiredActionProviderRepresentation();
         action.setAlias(providerId);
         action.setProviderId(providerId);
         action.setEnabled(true);
         action.setDefaultAction(true);
+        action.setPriority(last.getPriority() + 1);
 
         requiredActions.add(action);
         testRealm.setRequiredActions(requiredActions);

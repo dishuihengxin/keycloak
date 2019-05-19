@@ -17,18 +17,15 @@
 
 package org.keycloak.testsuite.util;
 
-import java.net.URI;
-
-import javax.ws.rs.core.UriBuilder;
-
 import org.keycloak.admin.client.resource.AttackDetectionResource;
 import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.admin.client.resource.ClientAttributeCertificateResource;
 import org.keycloak.admin.client.resource.ClientInitialAccessResource;
 import org.keycloak.admin.client.resource.ClientResource;
-import org.keycloak.admin.client.resource.ClientTemplateResource;
-import org.keycloak.admin.client.resource.ClientTemplatesResource;
+import org.keycloak.admin.client.resource.ClientScopeResource;
+import org.keycloak.admin.client.resource.ClientScopesResource;
 import org.keycloak.admin.client.resource.ClientsResource;
+import org.keycloak.admin.client.resource.ComponentsResource;
 import org.keycloak.admin.client.resource.GroupResource;
 import org.keycloak.admin.client.resource.GroupsResource;
 import org.keycloak.admin.client.resource.IdentityProviderResource;
@@ -39,10 +36,11 @@ import org.keycloak.admin.client.resource.RoleByIdResource;
 import org.keycloak.admin.client.resource.RoleMappingResource;
 import org.keycloak.admin.client.resource.RoleResource;
 import org.keycloak.admin.client.resource.RolesResource;
-import org.keycloak.admin.client.resource.UserFederationProviderResource;
-import org.keycloak.admin.client.resource.UserFederationProvidersResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
+
+import javax.ws.rs.core.UriBuilder;
+import java.net.URI;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -58,6 +56,16 @@ public class AdminEventPaths {
 
     public static String defaultGroupPath(String groupId) {
         URI uri = UriBuilder.fromUri("").path(RealmResource.class, "addDefaultGroup").build(groupId);
+        return uri.toString();
+    }
+
+    public static String defaultDefaultClientScopePath(String clientScopeId) {
+        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "addDefaultDefaultClientScope").build(clientScopeId);
+        return uri.toString();
+    }
+
+    public static String defaultOptionalClientScopePath(String clientScopeId) {
+        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "addDefaultOptionalClientScope").build(clientScopeId);
         return uri.toString();
     }
 
@@ -155,37 +163,42 @@ public class AdminEventPaths {
 
 
 
-    // CLIENT TEMPLATES
+    // CLIENT SCOPES
 
-    public static String clientTemplateResourcePath(String clientTemplateId) {
-        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "clientTemplates").path(ClientTemplatesResource.class, "get").build(clientTemplateId);
+    public static String clientScopeResourcePath(String clientScopeId) {
+        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "clientScopes").path(ClientScopesResource.class, "get").build(clientScopeId);
         return uri.toString();
     }
 
-    public static String clientTemplateScopeMappingsRealmLevelPath(String clientTemplateDbId) {
-        URI uri = UriBuilder.fromUri(clientTemplateResourcePath(clientTemplateDbId)).path(ClientTemplateResource.class, "getScopeMappings")
+    public static String clientScopeGenerateAudienceClientScopePath() {
+        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "clientScopes").path(ClientScopesResource.class, "generateAudienceClientScope").build();
+        return uri.toString();
+    }
+
+    public static String clientScopeRoleMappingsRealmLevelPath(String clientScopeDbId) {
+        URI uri = UriBuilder.fromUri(clientScopeResourcePath(clientScopeDbId)).path(ClientScopeResource.class, "getScopeMappings")
                 .path(RoleMappingResource.class, "realmLevel")
                 .build();
         return uri.toString();
     }
 
-    public static String clientTemplateScopeMappingsClientLevelPath(String clientTemplateDbId, String clientOwningRoleId) {
-        URI uri = UriBuilder.fromUri(clientTemplateResourcePath(clientTemplateDbId)).path(ClientTemplateResource.class, "getScopeMappings")
+    public static String clientScopeRoleMappingsClientLevelPath(String clientScopeDbId, String clientOwningRoleId) {
+        URI uri = UriBuilder.fromUri(clientScopeResourcePath(clientScopeDbId)).path(ClientScopeResource.class, "getScopeMappings")
                 .path(RoleMappingResource.class, "clientLevel")
                 .build(clientOwningRoleId);
         return uri.toString();
     }
 
-    public static String clientTemplateProtocolMappersPath(String clientTemplateDbId) {
-        URI uri = UriBuilder.fromUri(clientTemplateResourcePath(clientTemplateDbId))
-                .path(ClientTemplateResource.class, "getProtocolMappers")
+    public static String clientScopeProtocolMappersPath(String clientScopeDbId) {
+        URI uri = UriBuilder.fromUri(clientScopeResourcePath(clientScopeDbId))
+                .path(ClientScopeResource.class, "getProtocolMappers")
                 .build();
         return uri.toString();
     }
 
 
-    public static String clientTemplateProtocolMapperPath(String clientTemplateDbId, String protocolMapperId) {
-        URI uri = UriBuilder.fromUri(clientTemplateProtocolMappersPath(clientTemplateDbId))
+    public static String clientScopeProtocolMapperPath(String clientScopeDbId, String protocolMapperId) {
+        URI uri = UriBuilder.fromUri(clientScopeProtocolMappersPath(clientScopeDbId))
                 .path(ProtocolMappersResource.class, "getMapperById")
                 .build(protocolMapperId);
         return uri.toString();
@@ -285,28 +298,19 @@ public class AdminEventPaths {
         return uri.toString();
     }
 
-    // USER FEDERATION PROVIDERS AND MAPPERS
-
-    public static String userFederationsResourcePath() {
-        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "userFederation").build();
+    // COMPONENTS
+    public static String componentsPath() {
+        URI uri = UriBuilder.fromUri("").path(RealmResource.class, "components").build();
         return uri.toString();
     }
 
-    public static String userFederationCreateResourcePath() {
-        URI uri = UriBuilder.fromUri(userFederationsResourcePath()).path(UserFederationProvidersResource.class, "create").build();
+    public static String componentPath(String componentId) {
+        URI uri = UriBuilder.fromUri(componentsPath()).path(ComponentsResource.class, "component").build(componentId);
         return uri.toString();
     }
 
-    public static String userFederationResourcePath(String userFederationId) {
-        URI uri = UriBuilder.fromUri(userFederationsResourcePath()).path(UserFederationProvidersResource.class, "get").build(userFederationId);
-        return uri.toString();
-    }
 
-    public static String userFederationMapperResourcePath(String userFederationId, String userFederationMapperId) {
-        URI uri = UriBuilder.fromUri(userFederationResourcePath(userFederationId))
-                .path(UserFederationProviderResource.class, "getMapperById").build(userFederationMapperId);
-        return uri.toString();
-    }
+
 
     // CLIENT INITIAL ACCESS
 
@@ -434,6 +438,18 @@ public class AdminEventPaths {
 
     public static String authRequiredActionPath(String requiredActionAlias) {
         URI uri = UriBuilder.fromUri(authMgmtBasePath()).path(AuthenticationManagementResource.class, "getRequiredAction")
+                .build(requiredActionAlias);
+        return uri.toString();
+    }
+
+    public static String authRaiseRequiredActionPath(String requiredActionAlias) {
+        URI uri = UriBuilder.fromUri(authMgmtBasePath()).path(AuthenticationManagementResource.class, "raiseRequiredActionPriority")
+                .build(requiredActionAlias);
+        return uri.toString();
+    }
+
+    public static String authLowerRequiredActionPath(String requiredActionAlias) {
+        URI uri = UriBuilder.fromUri(authMgmtBasePath()).path(AuthenticationManagementResource.class, "lowerRequiredActionPriority")
                 .build(requiredActionAlias);
         return uri.toString();
     }

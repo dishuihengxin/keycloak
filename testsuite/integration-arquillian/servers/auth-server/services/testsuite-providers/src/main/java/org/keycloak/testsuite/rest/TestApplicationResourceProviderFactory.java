@@ -18,16 +18,18 @@
 package org.keycloak.testsuite.rest;
 
 import org.keycloak.Config.Scope;
-import org.keycloak.events.admin.AdminEvent;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.representations.adapters.action.AdminAction;
 import org.keycloak.representations.adapters.action.LogoutAction;
 import org.keycloak.representations.adapters.action.PushNotBeforeAction;
 import org.keycloak.representations.adapters.action.TestAvailabilityAction;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
 
+import java.security.KeyPair;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 
@@ -40,9 +42,11 @@ public class TestApplicationResourceProviderFactory implements RealmResourceProv
     private BlockingQueue<PushNotBeforeAction> pushNotBeforeActions = new LinkedBlockingDeque<>();
     private BlockingQueue<TestAvailabilityAction> testAvailabilityActions = new LinkedBlockingDeque<>();
 
+    private final OIDCClientData oidcClientData = new OIDCClientData();
+
     @Override
     public RealmResourceProvider create(KeycloakSession session) {
-        return new TestApplicationResourceProvider(session, adminLogoutActions, pushNotBeforeActions, testAvailabilityActions);
+        return new TestApplicationResourceProvider(session, adminLogoutActions, pushNotBeforeActions, testAvailabilityActions, oidcClientData);
     }
 
     @Override
@@ -62,4 +66,53 @@ public class TestApplicationResourceProviderFactory implements RealmResourceProv
         return "app";
     }
 
+
+    public static class OIDCClientData {
+
+        private KeyPair signingKeyPair;
+        private String oidcRequest;
+        private List<String> sectorIdentifierRedirectUris;
+        private String signingKeyType = KeyType.RSA;
+        private String signingKeyAlgorithm = Algorithm.RS256;
+
+        public KeyPair getSigningKeyPair() {
+            return signingKeyPair;
+        }
+
+        public void setSigningKeyPair(KeyPair signingKeyPair) {
+            this.signingKeyPair = signingKeyPair;
+        }
+
+        public String getOidcRequest() {
+            return oidcRequest;
+        }
+
+        public void setOidcRequest(String oidcRequest) {
+            this.oidcRequest = oidcRequest;
+        }
+
+        public List<String> getSectorIdentifierRedirectUris() {
+            return sectorIdentifierRedirectUris;
+        }
+
+        public void setSectorIdentifierRedirectUris(List<String> sectorIdentifierRedirectUris) {
+            this.sectorIdentifierRedirectUris = sectorIdentifierRedirectUris;
+        }
+
+        public String getSigningKeyType() {
+            return signingKeyType;
+        }
+
+        public void setSigningKeyType(String signingKeyType) {
+            this.signingKeyType = signingKeyType;
+        }
+
+        public String getSigningKeyAlgorithm() {
+            return signingKeyAlgorithm;
+        }
+
+        public void setSigningKeyAlgorithm(String signingKeyAlgorithm) {
+            this.signingKeyAlgorithm = signingKeyAlgorithm;
+        }
+    }
 }

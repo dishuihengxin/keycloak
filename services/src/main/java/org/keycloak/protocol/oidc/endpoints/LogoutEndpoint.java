@@ -17,11 +17,12 @@
 
 package org.keycloak.protocol.oidc.endpoints;
 
+import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.jboss.resteasy.spi.HttpRequest;
-import org.keycloak.common.ClientConnection;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
@@ -36,16 +37,17 @@ import org.keycloak.protocol.oidc.utils.AuthorizeClientUtil;
 import org.keycloak.protocol.oidc.utils.RedirectUtils;
 import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
+import org.keycloak.services.ErrorPage;
 import org.keycloak.services.ErrorResponseException;
-import org.keycloak.services.ServicesLogger;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.UserSessionManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.Cors;
-import org.keycloak.services.ErrorPage;
+import org.keycloak.services.util.MtlsHoKTokenUtil;
+import org.keycloak.util.TokenUtil;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
-import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
@@ -54,13 +56,12 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
-import javax.ws.rs.core.UriInfo;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public class LogoutEndpoint {
-    protected static ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+    private static final Logger logger = Logger.getLogger(LogoutEndpoint.class);
 
     @Context
     private KeycloakSession session;
@@ -73,9 +74,6 @@ public class LogoutEndpoint {
 
     @Context
     private HttpHeaders headers;
-
-    @Context
-    private UriInfo uriInfo;
 
     private TokenManager tokenManager;
     private RealmModel realm;
@@ -90,7 +88,11 @@ public class LogoutEndpoint {
     /**
      * Logout user session.  User must be logged in via a session cookie.
      *
+     * When the logout is initiated by a remote idp, the parameter "initiating_idp" can be supplied. This param will
+     * prevent upstream logout (since the logout procedure has already been started in the remote idp).
+     *
      * @param redirectUri
+     * @param initiatingIdp The alias of the idp initiating the logout.
      * @return
      */
     @GET
@@ -98,36 +100,30 @@ public class LogoutEndpoint {
     public Response logout(@QueryParam(OIDCLoginProtocol.REDIRECT_URI_PARAM) String redirectUri, // deprecated
                            @QueryParam("id_token_hint") String encodedIdToken,
                            @QueryParam("post_logout_redirect_uri") String postLogoutRedirectUri,
-                           @QueryParam("state") String state) {
+                           @QueryParam("state") String state,
+                           @QueryParam("initiating_idp") String initiatingIdp) {
         String redirect = postLogoutRedirectUri != null ? postLogoutRedirectUri : redirectUri;
 
         if (redirect != null) {
-            String validatedUri = RedirectUtils.verifyRealmRedirectUri(uriInfo, redirect, realm);
+            String validatedUri = RedirectUtils.verifyRealmRedirectUri(session.getContext().getUri(), redirect, realm);
             if (validatedUri == null) {
                 event.event(EventType.LOGOUT);
                 event.detail(Details.REDIRECT_URI, redirect);
                 event.error(Errors.INVALID_REDIRECT_URI);
-                return ErrorPage.error(session, Messages.INVALID_REDIRECT_URI);
+                return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REDIRECT_URI);
             }
             redirect = validatedUri;
         }
 
         UserSessionModel userSession = null;
-        boolean error = false;
         if (encodedIdToken != null) {
             try {
-                IDToken idToken = tokenManager.verifyIDToken(realm, encodedIdToken);
+                IDToken idToken = tokenManager.verifyIDTokenSignature(session, encodedIdToken);
                 userSession = session.sessions().getUserSession(realm, idToken.getSessionState());
-                if (userSession == null) {
-                    error = true;
-                }
             } catch (OAuthErrorException e) {
-                error = true;
-            }
-            if (error) {
                 event.event(EventType.LOGOUT);
                 event.error(Errors.INVALID_TOKEN);
-                return ErrorPage.error(session, Messages.SESSION_NOT_ACTIVE);
+                return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Messages.SESSION_NOT_ACTIVE);
             }
         }
 
@@ -139,12 +135,12 @@ public class LogoutEndpoint {
             if (state != null) userSession.setNote(OIDCLoginProtocol.LOGOUT_STATE_PARAM, state);
             userSession.setNote(AuthenticationManager.KEYCLOAK_LOGOUT_PROTOCOL, OIDCLoginProtocol.LOGIN_PROTOCOL);
             logger.debug("Initiating OIDC browser logout");
-            Response response =  AuthenticationManager.browserLogout(session, realm, authResult.getSession(), uriInfo, clientConnection, headers);
+            Response response =  AuthenticationManager.browserLogout(session, realm, authResult.getSession(), session.getContext().getUri(), clientConnection, headers, initiatingIdp);
             logger.debug("finishing OIDC browser logout");
             return response;
         } else if (userSession != null) { // non browser logout
             event.event(EventType.LOGOUT);
-            AuthenticationManager.backchannelLogout(session, realm, userSession, uriInfo, clientConnection, headers, true);
+            AuthenticationManager.backchannelLogout(session, realm, userSession, session.getContext().getUri(), clientConnection, headers, true);
             event.user(userSession.getUser()).session(userSession).success();
         }
 
@@ -169,12 +165,11 @@ public class LogoutEndpoint {
      *
      * returns 204 if successful, 400 if not with a json error response.
      *
-     * @param authorizationHeader
      * @return
      */
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    public Response logoutToken(final @HeaderParam(HttpHeaders.AUTHORIZATION) String authorizationHeader) {
+    public Response logoutToken() {
         MultivaluedMap<String, String> form = request.getDecodedFormParameters();
         checkSsl();
 
@@ -186,21 +181,41 @@ public class LogoutEndpoint {
             event.error(Errors.INVALID_TOKEN);
             throw new ErrorResponseException(OAuthErrorException.INVALID_REQUEST, "No refresh token", Response.Status.BAD_REQUEST);
         }
+
+        RefreshToken token = null;
         try {
-            RefreshToken token = tokenManager.verifyRefreshToken(realm, refreshToken);
-            UserSessionModel userSessionModel = session.sessions().getUserSession(realm, token.getSessionState());
+            // KEYCLOAK-6771 Certificate Bound Token
+            token = tokenManager.verifyRefreshToken(session, realm, client, request, refreshToken, false);
+
+            boolean offline = TokenUtil.TOKEN_TYPE_OFFLINE.equals(token.getType());
+
+            UserSessionModel userSessionModel;
+            if (offline) {
+                UserSessionManager sessionManager = new UserSessionManager(session);
+                userSessionModel = sessionManager.findOfflineUserSession(realm, token.getSessionState());
+            } else {
+                userSessionModel = session.sessions().getUserSession(realm, token.getSessionState());
+            }
+
             if (userSessionModel != null) {
-                logout(userSessionModel);
+                logout(userSessionModel, offline);
             }
         } catch (OAuthErrorException e) {
-            event.error(Errors.INVALID_TOKEN);
-            throw new ErrorResponseException(e.getError(), e.getDescription(), Response.Status.BAD_REQUEST);
+            // KEYCLOAK-6771 Certificate Bound Token
+            if (MtlsHoKTokenUtil.CERT_VERIFY_ERROR_DESC.equals(e.getDescription())) {
+                event.error(Errors.NOT_ALLOWED);
+                throw new ErrorResponseException(e.getError(), e.getDescription(), Response.Status.UNAUTHORIZED);
+            } else {
+                event.error(Errors.INVALID_TOKEN);
+                throw new ErrorResponseException(e.getError(), e.getDescription(), Response.Status.BAD_REQUEST);
+            }
         }
-        return Cors.add(request, Response.noContent()).auth().allowedOrigins(client).allowedMethods("POST").exposedHeaders(Cors.ACCESS_CONTROL_ALLOW_METHODS).build();
+
+        return Cors.add(request, Response.noContent()).auth().allowedOrigins(session.getContext().getUri(), client).allowedMethods("POST").exposedHeaders(Cors.ACCESS_CONTROL_ALLOW_METHODS).build();
     }
 
-    private void logout(UserSessionModel userSession) {
-        AuthenticationManager.backchannelLogout(session, realm, userSession, uriInfo, clientConnection, headers, true);
+    private void logout(UserSessionModel userSession, boolean offline) {
+        AuthenticationManager.backchannelLogout(session, realm, userSession, session.getContext().getUri(), clientConnection, headers, true, offline);
         event.user(userSession.getUser()).session(userSession).success();
     }
 
@@ -208,14 +223,14 @@ public class LogoutEndpoint {
         ClientModel client = AuthorizeClientUtil.authorizeClient(session, event).getClient();
 
         if (client.isBearerOnly()) {
-            throw new ErrorResponseException("invalid_client", "Bearer-only not allowed", Response.Status.BAD_REQUEST);
+            throw new ErrorResponseException(Errors.INVALID_CLIENT, "Bearer-only not allowed", Response.Status.BAD_REQUEST);
         }
 
         return client;
     }
 
     private void checkSsl() {
-        if (!uriInfo.getBaseUri().getScheme().equals("https") && realm.getSslRequired().isRequired(clientConnection)) {
+        if (!session.getContext().getUri().getBaseUri().getScheme().equals("https") && realm.getSslRequired().isRequired(clientConnection)) {
             throw new ErrorResponseException("invalid_request", "HTTPS required", Response.Status.FORBIDDEN);
         }
     }

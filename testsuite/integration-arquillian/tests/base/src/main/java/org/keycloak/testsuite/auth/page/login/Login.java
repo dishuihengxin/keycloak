@@ -17,27 +17,20 @@
 package org.keycloak.testsuite.auth.page.login;
 
 import org.jboss.arquillian.graphene.page.Page;
-import org.keycloak.testsuite.auth.page.AuthRealm;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.FindBy;
 
 import javax.ws.rs.core.UriBuilder;
-
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  *
  * @author Petr Mensik
  * @author tkyjovsk
  */
-public abstract class Login extends AuthRealm {
+public abstract class Login extends LoginBase {
 
     public static final String PROTOCOL = "protocol";
     public static final String OIDC = "openid-connect";
     public static final String SAML = "saml";
     public static final String LOGIN_ACTION = "login-action";
-    private String keycloakThemeCssName;
 
     @Override
     public UriBuilder createUriBuilder() {
@@ -58,25 +51,6 @@ public abstract class Login extends AuthRealm {
 
     public LoginForm form() {
         return form;
-    }
-
-    public void setKeycloakThemeCssName(String name) {
-        keycloakThemeCssName = name;
-    }
-
-    protected By getKeycloakThemeLocator() {
-        if (keycloakThemeCssName == null) {
-            throw new IllegalStateException("keycloakThemeCssName property must be set");
-        }
-        return By.cssSelector("link[href*='login/" + keycloakThemeCssName + "/css/login.css']");
-    }
-
-    public void waitForKeycloakThemeNotPresent() {
-        waitUntilElement(getKeycloakThemeLocator()).is().not().present();
-    }
-
-    public void waitForKeycloakThemePresent() {
-        waitUntilElement(getKeycloakThemeLocator()).is().present();
     }
 
 }

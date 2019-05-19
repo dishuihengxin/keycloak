@@ -17,15 +17,17 @@
 
 package org.keycloak.adapters.saml.config.parsers;
 
+import org.jboss.logging.Logger;
 import org.keycloak.adapters.saml.DefaultSamlDeployment;
 import org.keycloak.adapters.saml.SamlDeployment;
+import org.keycloak.adapters.saml.config.IDP;
 import org.keycloak.adapters.saml.config.Key;
 import org.keycloak.adapters.saml.config.KeycloakSamlAdapter;
 import org.keycloak.adapters.saml.config.SP;
 import org.keycloak.common.enums.SslRequired;
+import org.keycloak.common.util.PemUtils;
 import org.keycloak.saml.SignatureAlgorithm;
 import org.keycloak.saml.common.exceptions.ParsingException;
-import org.keycloak.common.util.PemUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,32 +41,49 @@ import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.util.HashSet;
 import java.util.Set;
+import org.keycloak.adapters.cloned.HttpClientBuilder;
+import java.net.URI;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.X509Certificate;
+import java.util.logging.Level;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class DeploymentBuilder {
+
+    protected static Logger log = Logger.getLogger(DeploymentBuilder.class);
+
     public SamlDeployment build(InputStream xml, ResourceLoader resourceLoader) throws ParsingException {
         DefaultSamlDeployment deployment = new DefaultSamlDeployment();
-        DefaultSamlDeployment.DefaultIDP idp = new DefaultSamlDeployment.DefaultIDP();
+        DefaultSamlDeployment.DefaultIDP defaultIDP = new DefaultSamlDeployment.DefaultIDP();
         DefaultSamlDeployment.DefaultSingleSignOnService sso = new DefaultSamlDeployment.DefaultSingleSignOnService();
         DefaultSamlDeployment.DefaultSingleLogoutService slo = new DefaultSamlDeployment.DefaultSingleLogoutService();
-        idp.setSingleSignOnService(sso);
-        idp.setSingleLogoutService(slo);
+        defaultIDP.setSingleSignOnService(sso);
+        defaultIDP.setSingleLogoutService(slo);
 
-        KeycloakSamlAdapter adapter = (KeycloakSamlAdapter)(new KeycloakSamlAdapterXMLParser().parse(xml));
+        KeycloakSamlAdapter adapter = (KeycloakSamlAdapter) KeycloakSamlAdapterParser.getInstance().parse(xml);
         SP sp = adapter.getSps().get(0);
         deployment.setConfigured(true);
         deployment.setEntityID(sp.getEntityID());
+        try {
+            URI.create(sp.getEntityID());
+        } catch (IllegalArgumentException ex) {
+            log.warnf("Entity ID is not an URI, assertion that restricts audience will fail. Update Entity ID to be URI.", sp.getEntityID());
+        }
         deployment.setForceAuthentication(sp.isForceAuthentication());
         deployment.setIsPassive(sp.isIsPassive());
         deployment.setNameIDPolicyFormat(sp.getNameIDPolicyFormat());
         deployment.setLogoutPage(sp.getLogoutPage());
-        deployment.setSignatureCanonicalizationMethod(sp.getIdp().getSignatureCanonicalizationMethod());
+        IDP idp = sp.getIdp();
+        deployment.setSignatureCanonicalizationMethod(idp.getSignatureCanonicalizationMethod());
+        deployment.setAutodetectBearerOnly(sp.isAutodetectBearerOnly());
         deployment.setSignatureAlgorithm(SignatureAlgorithm.RSA_SHA256);
-        if (sp.getIdp().getSignatureAlgorithm() != null) {
-            deployment.setSignatureAlgorithm(SignatureAlgorithm.valueOf(sp.getIdp().getSignatureAlgorithm()));
+        if (idp.getSignatureAlgorithm() != null) {
+            deployment.setSignatureAlgorithm(SignatureAlgorithm.valueOf(idp.getSignatureAlgorithm()));
         }
         if (sp.getPrincipalNameMapping() != null) {
             SamlDeployment.PrincipalNamePolicy policy = SamlDeployment.PrincipalNamePolicy.valueOf(sp.getPrincipalNameMapping().getPolicy());
@@ -90,12 +109,16 @@ public class DeploymentBuilder {
                         KeyStore keyStore = loadKeystore(resourceLoader, key);
                         Certificate cert = null;
                         try {
+                            log.debugf("Try to load key [%s]", key.getKeystore().getCertificateAlias());
                             cert = keyStore.getCertificate(key.getKeystore().getCertificateAlias());
+                            if(cert == null) {
+                                log.errorf("Key alias %s is not found into keystore", key.getKeystore().getCertificateAlias());
+                            }
                             privateKey = (PrivateKey) keyStore.getKey(key.getKeystore().getPrivateKeyAlias(), key.getKeystore().getPrivateKeyPassword().toCharArray());
+                            publicKey = cert.getPublicKey();
                         } catch (Exception e) {
                             throw new RuntimeException(e);
                         }
-                        publicKey = cert.getPublicKey();
                     } else {
                         if (key.getPrivateKeyPem() == null) {
                             throw new RuntimeException("SP signing key must have a PrivateKey defined");
@@ -140,70 +163,94 @@ public class DeploymentBuilder {
             }
         }
 
-        deployment.setIdp(idp);
-        idp.setEntityID(sp.getIdp().getEntityID());
-        sso.setRequestBinding(SamlDeployment.Binding.parseBinding(sp.getIdp().getSingleSignOnService().getRequestBinding()));
-        sso.setRequestBindingUrl(sp.getIdp().getSingleSignOnService().getBindingUrl());
-        if (sp.getIdp().getSingleSignOnService().getResponseBinding() != null) {
-            sso.setResponseBinding(SamlDeployment.Binding.parseBinding(sp.getIdp().getSingleSignOnService().getResponseBinding()));
+        deployment.setIdp(defaultIDP);
+        defaultIDP.setEntityID(idp.getEntityID());
+        sso.setRequestBinding(SamlDeployment.Binding.parseBinding(
+            idp.getSingleSignOnService().getRequestBinding()));
+        sso.setRequestBindingUrl(idp.getSingleSignOnService().getBindingUrl());
+        if (idp.getSingleSignOnService().getResponseBinding() != null) {
+            sso.setResponseBinding(SamlDeployment.Binding.parseBinding(
+                idp.getSingleSignOnService().getResponseBinding()));
         }
-        sso.setSignRequest(sp.getIdp().getSingleSignOnService().isSignRequest());
-        sso.setValidateResponseSignature(sp.getIdp().getSingleSignOnService().isValidateResponseSignature());
-        sso.setValidateAssertionSignature(sp.getIdp().getSingleSignOnService().isValidateAssertionSignature());
+        if (idp.getSingleSignOnService().getAssertionConsumerServiceUrl() != null) {
+            if (! idp.getSingleSignOnService().getAssertionConsumerServiceUrl().endsWith("/saml")) {
+                throw new RuntimeException("AssertionConsumerServiceUrl must end with \"/saml\".");
+            }
+            sso.setAssertionConsumerServiceUrl(URI.create(idp.getSingleSignOnService().getAssertionConsumerServiceUrl()));
+        }
+        sso.setSignRequest(idp.getSingleSignOnService().isSignRequest());
+        sso.setValidateResponseSignature(idp.getSingleSignOnService().isValidateResponseSignature());
+        sso.setValidateAssertionSignature(idp.getSingleSignOnService().isValidateAssertionSignature());
 
-        slo.setSignRequest(sp.getIdp().getSingleLogoutService().isSignRequest());
-        slo.setSignResponse(sp.getIdp().getSingleLogoutService().isSignResponse());
-        slo.setValidateResponseSignature(sp.getIdp().getSingleLogoutService().isValidateResponseSignature());
-        slo.setValidateRequestSignature(sp.getIdp().getSingleLogoutService().isValidateRequestSignature());
-        slo.setRequestBinding(SamlDeployment.Binding.parseBinding(sp.getIdp().getSingleLogoutService().getRequestBinding()));
-        slo.setResponseBinding(SamlDeployment.Binding.parseBinding(sp.getIdp().getSingleLogoutService().getResponseBinding()));
+        slo.setSignRequest(idp.getSingleLogoutService().isSignRequest());
+        slo.setSignResponse(idp.getSingleLogoutService().isSignResponse());
+        slo.setValidateResponseSignature(idp.getSingleLogoutService().isValidateResponseSignature());
+        slo.setValidateRequestSignature(idp.getSingleLogoutService().isValidateRequestSignature());
+        slo.setRequestBinding(SamlDeployment.Binding.parseBinding(
+            idp.getSingleLogoutService().getRequestBinding()));
+        slo.setResponseBinding(SamlDeployment.Binding.parseBinding(
+            idp.getSingleLogoutService().getResponseBinding()));
         if (slo.getRequestBinding() == SamlDeployment.Binding.POST) {
-            slo.setRequestBindingUrl(sp.getIdp().getSingleLogoutService().getPostBindingUrl());
+            slo.setRequestBindingUrl(idp.getSingleLogoutService().getPostBindingUrl());
         } else {
-            slo.setRequestBindingUrl(sp.getIdp().getSingleLogoutService().getRedirectBindingUrl());
+            slo.setRequestBindingUrl(idp.getSingleLogoutService().getRedirectBindingUrl());
         }
         if (slo.getResponseBinding() == SamlDeployment.Binding.POST) {
-            slo.setResponseBindingUrl(sp.getIdp().getSingleLogoutService().getPostBindingUrl());
+            slo.setResponseBindingUrl(idp.getSingleLogoutService().getPostBindingUrl());
         } else {
-            slo.setResponseBindingUrl(sp.getIdp().getSingleLogoutService().getRedirectBindingUrl());
+            slo.setResponseBindingUrl(idp.getSingleLogoutService().getRedirectBindingUrl());
         }
-        if (sp.getIdp().getKeys() != null) {
-            for (Key key : sp.getIdp().getKeys()) {
+        if (idp.getKeys() != null) {
+            for (Key key : idp.getKeys()) {
                 if (key.isSigning()) {
-                    if (key.getKeystore() != null) {
-                        KeyStore keyStore = loadKeystore(resourceLoader, key);
-                        Certificate cert = null;
-                        try {
-                            cert = keyStore.getCertificate(key.getKeystore().getCertificateAlias());
-                        } catch (KeyStoreException e) {
-                            throw new RuntimeException(e);
-                        }
-                        idp.setSignatureValidationKey(cert.getPublicKey());
-                    } else {
-                        if (key.getPublicKeyPem() == null && key.getCertificatePem() == null) {
-                            throw new RuntimeException("IDP signing key must have a PublicKey or Certificate defined");
-                        }
-                        try {
-                            PublicKey publicKey = getPublicKeyFromPem(key);
-                            idp.setSignatureValidationKey(publicKey);
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
+                    processSigningKey(defaultIDP, key, resourceLoader);
                 }
             }
         }
-
+        defaultIDP.setMetadataUrl(idp.getMetadataUrl());
+        defaultIDP.setClient(new HttpClientBuilder().build(idp.getHttpClientConfig()));
+        defaultIDP.refreshKeyLocatorConfiguration();
 
         return deployment;
     }
 
-    protected static PublicKey getPublicKeyFromPem(Key key) throws Exception {
+    private void processSigningKey(DefaultSamlDeployment.DefaultIDP idp, Key key, ResourceLoader resourceLoader) throws RuntimeException {
+        PublicKey publicKey;
+        if (key.getKeystore() != null) {
+            KeyStore keyStore = loadKeystore(resourceLoader, key);
+            Certificate cert = null;
+            try {
+                cert = keyStore.getCertificate(key.getKeystore().getCertificateAlias());
+                if (cert instanceof X509Certificate) {
+                    ((X509Certificate) cert).checkValidity();
+                }
+            } catch (KeyStoreException e) {
+                throw new RuntimeException(e);
+            } catch (CertificateException e) {
+                throw new RuntimeException(e);
+            }
+            publicKey = cert.getPublicKey();
+        } else {
+            if (key.getPublicKeyPem() == null && key.getCertificatePem() == null) {
+                throw new RuntimeException("IDP signing key must have a PublicKey or Certificate defined");
+            }
+            publicKey = getPublicKeyFromPem(key);
+        }
+
+        idp.addSignatureValidationKey(publicKey);
+    }
+
+    protected static PublicKey getPublicKeyFromPem(Key key) {
         PublicKey publicKey;
         if (key.getPublicKeyPem() != null) {
             publicKey = PemUtils.decodePublicKey(key.getPublicKeyPem().trim());
         } else {
-            Certificate cert = PemUtils.decodeCertificate(key.getCertificatePem().trim());
+            X509Certificate cert = PemUtils.decodeCertificate(key.getCertificatePem().trim());
+            try {
+                cert.checkValidity();
+            } catch (CertificateException ex) {
+                throw new RuntimeException(ex);
+            }
             publicKey = cert.getPublicKey();
         }
         return publicKey;

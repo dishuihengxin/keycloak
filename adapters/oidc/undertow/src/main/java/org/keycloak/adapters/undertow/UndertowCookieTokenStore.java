@@ -22,11 +22,11 @@ import org.jboss.logging.Logger;
 import org.keycloak.KeycloakPrincipal;
 import org.keycloak.adapters.AdapterTokenStore;
 import org.keycloak.adapters.CookieTokenStore;
-import org.keycloak.adapters.spi.HttpFacade;
 import org.keycloak.adapters.KeycloakDeployment;
 import org.keycloak.adapters.OidcKeycloakAccount;
 import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
 import org.keycloak.adapters.RequestAuthenticator;
+import org.keycloak.adapters.spi.HttpFacade;
 
 /**
  * Per-request object. Storage of tokens in cookie
@@ -74,7 +74,7 @@ public class UndertowCookieTokenStore implements AdapterTokenStore {
             return true;
         } else {
             log.debug("Account was not active, removing cookie and returning false");
-            CookieTokenStore.removeCookie(facade);
+            CookieTokenStore.removeCookie(deployment, facade);
             return false;
         }
     }
@@ -90,7 +90,7 @@ public class UndertowCookieTokenStore implements AdapterTokenStore {
         KeycloakPrincipal<RefreshableKeycloakSecurityContext> principal = CookieTokenStore.getPrincipalFromCookie(deployment, facade, this);
         if (principal == null) return;
 
-        CookieTokenStore.removeCookie(facade);
+        CookieTokenStore.removeCookie(deployment, facade);
     }
 
     @Override

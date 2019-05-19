@@ -45,8 +45,7 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
 
-        String deploymentName = deploymentUnit.getName();
-        if (Configuration.INSTANCE.getSecureDeployment(deploymentName) == null) {
+        if (Configuration.INSTANCE.getSecureDeployment(deploymentUnit) == null) {
             WarMetaData warMetaData = deploymentUnit.getAttachment(WarMetaData.ATTACHMENT_KEY);
             if (warMetaData == null) {
                 return;
@@ -66,7 +65,7 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
         final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
         final ModuleLoader moduleLoader = Module.getBootModuleLoader();
         addCommonModules(moduleSpecification, moduleLoader);
-        addPlatformSpecificModules(moduleSpecification, moduleLoader);
+        addPlatformSpecificModules(phaseContext, moduleSpecification, moduleLoader);
     }
 
     private void addCommonModules(ModuleSpecification moduleSpecification, ModuleLoader moduleLoader) {
@@ -77,7 +76,7 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, KEYCLOAK_COMMON, false, false, false, false));
     }
 
-    abstract protected void addPlatformSpecificModules(ModuleSpecification moduleSpecification, ModuleLoader moduleLoader);
+    abstract protected void addPlatformSpecificModules(DeploymentPhaseContext phaseContext, ModuleSpecification moduleSpecification, ModuleLoader moduleLoader);
 
     @Override
     public void undeploy(DeploymentUnit du) {

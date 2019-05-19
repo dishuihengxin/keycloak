@@ -40,7 +40,6 @@ public class KeycloakOIDCJbossSubsystemClientInstallation implements ClientInsta
         StringBuffer buffer = new StringBuffer();
         buffer.append("<secure-deployment name=\"WAR MODULE NAME.war\">\n");
         buffer.append("    <realm>").append(realm.getName()).append("</realm>\n");
-        buffer.append("    <realm-public-key>").append(realm.getPublicKeyPem()).append("</realm-public-key>\n");
         buffer.append("    <auth-server-url>").append(baseUri.toString()).append("</auth-server-url>\n");
         if (client.isBearerOnly()){
             buffer.append("    <bearer-only>true</bearer-only>\n");
@@ -50,6 +49,11 @@ public class KeycloakOIDCJbossSubsystemClientInstallation implements ClientInsta
         }
         buffer.append("    <ssl-required>").append(realm.getSslRequired().name()).append("</ssl-required>\n");
         buffer.append("    <resource>").append(client.getClientId()).append("</resource>\n");
+
+        if (KeycloakOIDCClientInstallation.showVerifyTokenAudience(client)) {
+            buffer.append("    <verify-token-audience>true</verify-token-audience>\n");
+        }
+
         String cred = client.getSecret();
         if (KeycloakOIDCClientInstallation.showClientCredentialsAdapterConfig(client)) {
             Map<String, Object> adapterConfig = KeycloakOIDCClientInstallation.getClientCredentialsAdapterConfig(session, client);

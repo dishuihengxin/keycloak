@@ -21,17 +21,18 @@ import org.keycloak.KeycloakPrincipal;
 import org.keycloak.KeycloakSecurityContext;
 import org.keycloak.adapters.AdapterTokenStore;
 import org.keycloak.adapters.AdapterUtils;
-import org.keycloak.adapters.spi.HttpFacade;
-import org.keycloak.adapters.spi.KeycloakAccount;
 import org.keycloak.adapters.KeycloakDeployment;
 import org.keycloak.adapters.OAuthRequestAuthenticator;
 import org.keycloak.adapters.OidcKeycloakAccount;
 import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
 import org.keycloak.adapters.RequestAuthenticator;
+import org.keycloak.adapters.spi.HttpFacade;
+import org.keycloak.adapters.spi.KeycloakAccount;
 import org.keycloak.adapters.springsecurity.account.SimpleKeycloakAccount;
 import org.keycloak.adapters.springsecurity.token.KeycloakAuthenticationToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import javax.servlet.http.HttpServletRequest;
@@ -94,7 +95,10 @@ public class SpringSecurityRequestAuthenticator extends RequestAuthenticator {
 
         logger.debug("Completing bearer authentication. Bearer roles: {} ",roles);
 
-        SecurityContextHolder.getContext().setAuthentication(new KeycloakAuthenticationToken(account));
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(new KeycloakAuthenticationToken(account, false));
+        SecurityContextHolder.setContext(context);
+
         request.setAttribute(KeycloakSecurityContext.class.getName(), securityContext);
     }
 

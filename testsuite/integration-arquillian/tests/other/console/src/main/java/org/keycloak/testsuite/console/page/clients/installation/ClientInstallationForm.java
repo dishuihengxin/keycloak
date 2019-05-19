@@ -22,9 +22,12 @@
 package org.keycloak.testsuite.console.page.clients.installation;
 
 import org.keycloak.testsuite.page.Form;
+import org.keycloak.testsuite.util.WaitUtils;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 
 /**
  *
@@ -40,9 +43,10 @@ public class ClientInstallationForm extends Form {
 
     public void setConfigFormat(String value) {
         configFormatsSelect.selectByVisibleText(value);
+        WaitUtils.waitForPageToLoad();
     }
     
     public String getTextareaContent() {
-        return textarea.getText();
+        return getTextFromElement(textarea);
     }
 }

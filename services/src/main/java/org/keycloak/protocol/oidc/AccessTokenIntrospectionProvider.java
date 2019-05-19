@@ -18,16 +18,20 @@
 package org.keycloak.protocol.oidc;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.keycloak.RSATokenVerifier;
+import org.keycloak.OAuthErrorException;
+import org.keycloak.TokenVerifier;
 import org.keycloak.common.VerificationException;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.representations.AccessToken;
-import org.keycloak.services.ErrorResponseException;
+import org.keycloak.services.Urls;
 import org.keycloak.util.JsonSerialization;
 
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import java.io.IOException;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
@@ -46,21 +50,18 @@ public class AccessTokenIntrospectionProvider implements TokenIntrospectionProvi
 
     public Response introspect(String token) {
         try {
-            AccessToken toIntrospect = toAccessToken(token);
-            RealmModel realm = this.session.getContext().getRealm();
+            AccessToken accessToken = verifyAccessToken(token);
             ObjectNode tokenMetadata;
 
-            boolean active = tokenManager.isTokenValid(session, realm, toIntrospect);
-
-            if (active) {
-                tokenMetadata = JsonSerialization.createObjectNode(toIntrospect);
-                tokenMetadata.put("client_id", toIntrospect.getIssuedFor());
-                tokenMetadata.put("username", toIntrospect.getPreferredUsername());
+            if (accessToken != null) {
+                tokenMetadata = JsonSerialization.createObjectNode(accessToken);
+                tokenMetadata.put("client_id", accessToken.getIssuedFor());
+                tokenMetadata.put("username", accessToken.getPreferredUsername());
             } else {
                 tokenMetadata = JsonSerialization.createObjectNode();
             }
 
-            tokenMetadata.put("active", active);
+            tokenMetadata.put("active", accessToken != null);
 
             return Response.ok(JsonSerialization.writeValueAsBytes(tokenMetadata)).type(MediaType.APPLICATION_JSON_TYPE).build();
         } catch (Exception e) {
@@ -68,12 +69,24 @@ public class AccessTokenIntrospectionProvider implements TokenIntrospectionProvi
         }
     }
 
-    protected AccessToken toAccessToken(String token) {
+    protected AccessToken verifyAccessToken(String token) throws OAuthErrorException, IOException {
+        AccessToken accessToken;
+
         try {
-            return RSATokenVerifier.toAccessToken(token, realm.getPublicKey());
+            TokenVerifier<AccessToken> verifier = TokenVerifier.create(token, AccessToken.class)
+                    .realmUrl(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
+
+            SignatureVerifierContext verifierContext = session.getProvider(SignatureProvider.class, verifier.getHeader().getAlgorithm().name()).verifier(verifier.getHeader().getKeyId());
+            verifier.verifierContext(verifierContext);
+
+            accessToken = verifier.verify().getToken();
         } catch (VerificationException e) {
-            throw new ErrorResponseException("invalid_request", "Invalid token.", Response.Status.UNAUTHORIZED);
+            return null;
         }
+
+        RealmModel realm = this.session.getContext().getRealm();
+
+        return tokenManager.checkTokenValidForIntrospection(session, realm, accessToken) ? accessToken : null;
     }
 
     @Override

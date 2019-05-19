@@ -17,16 +17,16 @@
  */
 package org.keycloak.testsuite.console.page.clients;
 
+import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.testsuite.console.page.AdminConsoleRealm;
+import org.keycloak.testsuite.console.page.fragment.DataTable;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.keycloak.admin.client.resource.ClientsResource;
-import org.keycloak.representations.idm.ClientRepresentation;
-import org.keycloak.testsuite.console.page.AdminConsoleRealm;
-import org.keycloak.testsuite.console.page.fragment.DataTable;
 
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 import static org.openqa.selenium.By.linkText;
 import static org.openqa.selenium.By.tagName;
 
@@ -62,32 +62,26 @@ public class Clients extends AdminConsoleRealm {
         }
 
         public void createClient() {
-            waitForBody();
             clickHeaderLink(CREATE);
         }
 
         public void importClient() {
-            waitForBody();
             clickHeaderLink(IMPORT);
         }
 
         public void clickClient(ClientRepresentation client) {
-            waitForBody();
             clickClient(client.getClientId());
         }
 
         public void clickClient(String clientId) {
-            waitForBody();
             body().findElement(linkText(clientId)).click();
         }
 
         public void editClient(String clientId) {
-            waitForBody();
             clickRowActionButton(getRowByLinkText(clientId), EDIT);
         }
 
         public void deleteClient(String clientId) {
-            waitForBody();
             clickRowActionButton(getRowByLinkText(clientId), DELETE);
         }
 
@@ -117,9 +111,9 @@ public class Clients extends AdminConsoleRealm {
             if (row.isDisplayed()) {
                 client = new ClientRepresentation();
                 List<WebElement> tds = row.findElements(tagName("td"));
-                client.setClientId(tds.get(0).getText());
+                client.setClientId(getTextFromElement(tds.get(0)));
                 List<String> redirectUris = new ArrayList<>();
-                redirectUris.add(tds.get(2).getText()); // FIXME there can be more than 1 redirect uri
+                redirectUris.add(getTextFromElement(tds.get(2))); // FIXME there can be more than 1 redirect uri
                 client.setRedirectUris(redirectUris);
             }
             return client;

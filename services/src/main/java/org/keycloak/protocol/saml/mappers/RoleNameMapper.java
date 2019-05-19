@@ -18,10 +18,15 @@
 package org.keycloak.protocol.saml.mappers;
 
 import org.keycloak.Config;
-import org.keycloak.models.*;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.models.RoleContainerModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.protocol.ProtocolMapper;
-import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.protocol.saml.SamlProtocol;
+import org.keycloak.provider.ProviderConfigProperty;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -86,17 +91,15 @@ public class RoleNameMapper implements SAMLRoleNameMapper, ProtocolMapper {
         RoleContainerModel container = roleModel.getContainer();
         ClientModel app = null;
         if (container instanceof ClientModel) {
-            app = ((ClientModel) container);
+            app = (ClientModel) container;
         }
         String role = model.getConfig().get(ROLE_CONFIG);
         String newName = model.getConfig().get(NEW_ROLE_NAME);
-        String appName = null;
         int scopeIndex = role.indexOf('.');
-        if (scopeIndex > -1) {
-            if (app == null) return null;
-            appName = role.substring(0, scopeIndex);
-            if (!app.getClientId().equals(appName)) return null;
-            role = role.substring(scopeIndex + 1);
+        if (scopeIndex > -1 && app != null) {
+            final String clientId = app.getClientId();
+            if (! role.startsWith(clientId + ".")) return null;
+            role = role.substring(clientId.length() + 1);
         } else {
             if (app != null) return null;
         }

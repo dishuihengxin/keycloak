@@ -18,10 +18,10 @@
 
 package org.keycloak.authorization.jpa.entities;
 
-import org.keycloak.authorization.model.Policy;
-import org.keycloak.authorization.model.Resource;
-import org.keycloak.authorization.model.Scope;
-import org.keycloak.models.entities.AbstractIdentifiableEntity;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import javax.persistence.Access;
 import javax.persistence.AccessType;
@@ -33,15 +33,17 @@ import javax.persistence.FetchType;
 import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
-import javax.persistence.ManyToMany;
 import javax.persistence.ManyToOne;
 import javax.persistence.MapKeyColumn;
+import javax.persistence.NamedQueries;
+import javax.persistence.NamedQuery;
+import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+
+import org.hibernate.annotations.Nationalized;
+import org.keycloak.representations.idm.authorization.DecisionStrategy;
+import org.keycloak.representations.idm.authorization.Logic;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
@@ -50,16 +52,33 @@ import java.util.Set;
 @Table(name = "RESOURCE_SERVER_POLICY", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"NAME", "RESOURCE_SERVER_ID"})
 })
-public class PolicyEntity implements Policy {
+@NamedQueries(
+        {
+                @NamedQuery(name="findPolicyIdByServerId", query="select p.id from PolicyEntity p where  p.resourceServer.id = :serverId "),
+                @NamedQuery(name="findPolicyIdByName", query="select p from PolicyEntity p left join fetch p.associatedPolicies a where  p.resourceServer.id = :serverId  and p.name = :name"),
+                @NamedQuery(name="findPolicyIdByResource", query="select p from PolicyEntity p inner join fetch p.resources r left join fetch p.scopes s inner join fetch p.associatedPolicies a where p.resourceServer.id = :serverId and (r.resourceServer.id = :serverId and r.id = :resourceId)"),
+                @NamedQuery(name="findPolicyIdByScope", query="select pe from PolicyEntity pe left join fetch pe.resources r inner join fetch pe.scopes s inner join fetch pe.associatedPolicies a where pe.resourceServer.id = :serverId and exists (select p.id from ScopeEntity s inner join s.policies p where s.resourceServer.id = :serverId and (p.resourceServer.id = :serverId and p.type = 'scope' and s.id in (:scopeIds) and p.id = pe.id))"),
+                @NamedQuery(name="findPolicyIdByResourceScope", query="select pe from PolicyEntity pe inner join fetch pe.resources r inner join fetch pe.scopes s inner join fetch pe.associatedPolicies a where pe.resourceServer.id = :serverId and exists (select p.id from ScopeEntity s inner join s.policies p where s.resourceServer.id = :serverId and (p.resourceServer.id = :serverId and p.type = 'scope' and s.id in (:scopeIds) and p.id = pe.id)) and exists (select p.id from ResourceEntity r inner join r.policies p where r.resourceServer.id = :serverId and (p.resourceServer.id = :serverId and p.id = pe.id and p.type = 'scope' and r.id in (:resourceId)))"),
+                @NamedQuery(name="findPolicyIdByNullResourceScope", query="select pe from PolicyEntity pe left join fetch pe.resources r inner join fetch pe.scopes s inner join fetch pe.associatedPolicies a where pe.resourceServer.id = :serverId and exists (select p.id from ScopeEntity s inner join s.policies p where s.resourceServer.id = :serverId and (p.resourceServer.id = :serverId and p.id = pe.id and p.type = 'scope' and s.id in (:scopeIds))) and pe.resources is empty"),
+                @NamedQuery(name="findPolicyIdByType", query="select p.id from PolicyEntity p where p.resourceServer.id = :serverId and p.type = :type"),
+                @NamedQuery(name="findPolicyIdByResourceType", query="select p from PolicyEntity p inner join p.config c inner join fetch p.associatedPolicies a where p.resourceServer.id = :serverId and KEY(c) = 'defaultResourceType' and c like :type"),
+                @NamedQuery(name="findPolicyIdByDependentPolices", query="select p.id from PolicyEntity p inner join p.associatedPolicies ap where p.resourceServer.id = :serverId and (ap.resourceServer.id = :serverId and ap.id = :policyId)"),
+                @NamedQuery(name="deletePolicyByResourceServer", query="delete from PolicyEntity p where p.resourceServer.id = :serverId")
+        }
+)
+
+public class PolicyEntity {
 
     @Id
-    @Column(name="ID", length = 36)
-    @Access(AccessType.PROPERTY) // we do this because relationships often fetch id, but not entity.  This avoids an extra SQL
+    @Column(name = "ID", length = 36)
+    @Access(AccessType.PROPERTY)
+    // we do this because relationships often fetch id, but not entity.  This avoids an extra SQL
     private String id;
 
     @Column(name = "NAME")
     private String name;
 
+    @Nationalized
     @Column(name = "DESCRIPTION")
     private String description;
 
@@ -72,29 +91,31 @@ public class PolicyEntity implements Policy {
     @Column(name = "LOGIC")
     private Logic logic = Logic.POSITIVE;
 
-    @ElementCollection
-    @MapKeyColumn(name="NAME")
-    @Column(name="VALUE", columnDefinition = "TEXT")
-    @CollectionTable(name="POLICY_CONFIG", joinColumns={ @JoinColumn(name="POLICY_ID") })
+    @ElementCollection(fetch = FetchType.LAZY)
+    @MapKeyColumn(name = "NAME")
+    @Column(name = "VALUE", columnDefinition = "TEXT")
+    @CollectionTable(name = "POLICY_CONFIG", joinColumns = {@JoinColumn(name = "POLICY_ID")})
     private Map<String, String> config = new HashMap();
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "RESOURCE_SERVER_ID")
     private ResourceServerEntity resourceServer;
 
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {})
+    @OneToMany(fetch = FetchType.LAZY, cascade = {})
     @JoinTable(name = "ASSOCIATED_POLICY", joinColumns = @JoinColumn(name = "POLICY_ID"), inverseJoinColumns = @JoinColumn(name = "ASSOCIATED_POLICY_ID"))
     private Set<PolicyEntity> associatedPolicies = new HashSet<>();
 
-    @ManyToMany(fetch = FetchType.LAZY, cascade = {})
+    @OneToMany(fetch = FetchType.LAZY, cascade = {})
     @JoinTable(name = "RESOURCE_POLICY", joinColumns = @JoinColumn(name = "POLICY_ID"), inverseJoinColumns = @JoinColumn(name = "RESOURCE_ID"))
     private Set<ResourceEntity> resources = new HashSet<>();
 
-    @ManyToMany(fetch = FetchType.EAGER, cascade = {})
+    @OneToMany(fetch = FetchType.LAZY, cascade = {})
     @JoinTable(name = "SCOPE_POLICY", joinColumns = @JoinColumn(name = "POLICY_ID"), inverseJoinColumns = @JoinColumn(name = "SCOPE_ID"))
     private Set<ScopeEntity> scopes = new HashSet<>();
 
-    @Override
+    @Column(name = "OWNER")
+    private String owner;
+
     public String getId() {
         return this.id;
     }
@@ -103,7 +124,6 @@ public class PolicyEntity implements Policy {
         this.id = id;
     }
 
-    @Override
     public String getType() {
         return this.type;
     }
@@ -112,57 +132,46 @@ public class PolicyEntity implements Policy {
         this.type = type;
     }
 
-    @Override
     public DecisionStrategy getDecisionStrategy() {
         return this.decisionStrategy;
     }
 
-    @Override
     public void setDecisionStrategy(DecisionStrategy decisionStrategy) {
         this.decisionStrategy = decisionStrategy;
     }
 
-    @Override
     public Logic getLogic() {
         return this.logic;
     }
 
-    @Override
     public void setLogic(Logic logic) {
         this.logic = logic;
     }
 
-    @Override
     public Map<String, String> getConfig() {
         return this.config;
     }
 
-    @Override
     public void setConfig(Map<String, String> config) {
         this.config = config;
     }
 
-    @Override
     public String getName() {
         return this.name;
     }
 
-    @Override
     public void setName(String name) {
         this.name = name;
     }
 
-    @Override
     public String getDescription() {
         return this.description;
     }
 
-    @Override
     public void setDescription(String description) {
         this.description = description;
     }
 
-    @Override
     public ResourceServerEntity getResourceServer() {
         return this.resourceServer;
     }
@@ -171,16 +180,6 @@ public class PolicyEntity implements Policy {
         this.resourceServer = resourceServer;
     }
 
-    @Override
-    public <P extends Policy> Set<P> getAssociatedPolicies() {
-        return (Set<P>) this.associatedPolicies;
-    }
-
-    public void setAssociatedPolicies(Set<PolicyEntity> associatedPolicies) {
-        this.associatedPolicies = associatedPolicies;
-    }
-
-    @Override
     public Set<ResourceEntity> getResources() {
         return this.resources;
     }
@@ -189,7 +188,6 @@ public class PolicyEntity implements Policy {
         this.resources = resources;
     }
 
-    @Override
     public Set<ScopeEntity> getScopes() {
         return this.scopes;
     }
@@ -198,54 +196,34 @@ public class PolicyEntity implements Policy {
         this.scopes = scopes;
     }
 
-    @Override
-    public void addScope(Scope scope) {
-        getScopes().add((ScopeEntity) scope);
+    public Set<PolicyEntity> getAssociatedPolicies() {
+        return associatedPolicies;
     }
 
-    @Override
-    public void removeScope(Scope scope) {
-        getScopes().remove(scope);
+    public void setAssociatedPolicies(Set<PolicyEntity> associatedPolicies) {
+        this.associatedPolicies = associatedPolicies;
     }
 
-    @Override
-    public void addAssociatedPolicy(Policy associatedPolicy) {
-        getAssociatedPolicies().add(associatedPolicy);
+    public String getOwner() {
+        return owner;
     }
 
-    @Override
-    public void removeAssociatedPolicy(Policy associatedPolicy) {
-        getAssociatedPolicies().remove(associatedPolicy);
-    }
-
-    @Override
-    public void addResource(Resource resource) {
-        getResources().add((ResourceEntity) resource);
-    }
-
-    @Override
-    public void removeResource(Resource resource) {
-        getResources().remove(resource);
+    public void setOwner(String owner) {
+        this.owner = owner;
     }
 
     @Override
     public boolean equals(Object o) {
-        if (o == this) return true;
-
-        if (this.id == null) return false;
-
+        if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        AbstractIdentifiableEntity that = (AbstractIdentifiableEntity) o;
+        PolicyEntity that = (PolicyEntity) o;
 
-        if (!getId().equals(that.getId())) return false;
-
-        return true;
-
+        return getId().equals(that.getId());
     }
 
     @Override
     public int hashCode() {
-        return id!=null ? id.hashCode() : super.hashCode();
+        return getId().hashCode();
     }
 }

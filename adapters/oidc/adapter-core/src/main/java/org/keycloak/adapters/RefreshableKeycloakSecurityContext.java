@@ -20,7 +20,7 @@ package org.keycloak.adapters;
 import org.jboss.logging.Logger;
 import org.keycloak.AuthorizationContext;
 import org.keycloak.KeycloakSecurityContext;
-import org.keycloak.RSATokenVerifier;
+import org.keycloak.adapters.rotation.AdapterTokenVerifier;
 import org.keycloak.common.VerificationException;
 import org.keycloak.common.util.Time;
 import org.keycloak.representations.AccessToken;
@@ -76,7 +76,7 @@ public class RefreshableKeycloakSecurityContext extends KeycloakSecurityContext 
     }
 
     public boolean isActive() {
-        return token != null && this.token.isActive() && deployment!=null && this.token.getIssuedAt() > deployment.getNotBefore();
+        return token != null && this.token.isActive() && deployment!=null && this.token.getIssuedAt() >= deployment.getNotBefore();
     }
 
     public boolean isTokenTimeToLiveSufficient(AccessToken token) {
@@ -130,7 +130,8 @@ public class RefreshableKeycloakSecurityContext extends KeycloakSecurityContext 
         String tokenString = response.getToken();
         AccessToken token = null;
         try {
-            token = RSATokenVerifier.verifyToken(tokenString, deployment.getRealmKey(), deployment.getRealmInfoUrl());
+            AdapterTokenVerifier.VerifiedTokens tokens = AdapterTokenVerifier.verifyTokens(tokenString, response.getIdToken(), deployment);
+            token = tokens.getAccessToken();
             log.debug("Token Verification succeeded!");
         } catch (VerificationException e) {
             log.error("failed verification of token");
@@ -144,7 +145,7 @@ public class RefreshableKeycloakSecurityContext extends KeycloakSecurityContext 
         }
 
         if (response.getNotBeforePolicy() > deployment.getNotBefore()) {
-            deployment.setNotBefore(response.getNotBeforePolicy());
+            deployment.updateNotBefore(response.getNotBeforePolicy());
         }
 
         this.token = token;
@@ -155,7 +156,9 @@ public class RefreshableKeycloakSecurityContext extends KeycloakSecurityContext 
             this.refreshToken = response.getRefreshToken();
         }
         this.tokenString = tokenString;
-        tokenStore.refreshCallback(this);
+        if (tokenStore != null) {
+            tokenStore.refreshCallback(this);
+        }
         return true;
     }
 
